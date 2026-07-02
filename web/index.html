@@ -693,13 +693,16 @@
     const toplamEklenen = kayitlar.reduce((s,r)=>s+(r.eklenen||0),0);
     const vardiyaBazli = {};
     kayitlar.forEach(r => { const k='Vardiya '+r.vardiya; vardiyaBazli[k]=(vardiyaBazli[k]||0)+(r.harcanan||0); });
+    const uretimM3 = state.gunlukUretim.filter(r => r.tarih && r.tarih.slice(0,7)===ay).reduce((s,r)=>s+(r.m3||0),0);
     return {
       kayitSayisi: kayitlar.length,
       toplamHarcanan, toplamEklenen,
       ortVardiya: kayitlar.length ? toplamHarcanan/kayitlar.length : 0,
       ayBasiKalan: kayitlar.length ? kayitlar[0].dunden_kalan : null,
       aySonuKalan: kayitlar.length ? kayitlar[kayitlar.length-1].kalan : null,
-      vardiyaBazli
+      vardiyaBazli,
+      uretimM3,
+      m3BasinaTutkal: uretimM3 ? (toplamHarcanan/uretimM3) : null
     };
   }
 
@@ -732,6 +735,8 @@
       <div class="summary">
         <div class="stat"><div class="num">${o.ayBasiKalan!=null?o.ayBasiKalan.toFixed(0):'—'}</div><div class="label">Ay Başı Stok</div></div>
         <div class="stat"><div class="num">${o.aySonuKalan!=null?o.aySonuKalan.toFixed(0):'—'}</div><div class="label">Ay Sonu Stok</div></div>
+        <div class="stat"><div class="num">${o.uretimM3.toFixed(2)}</div><div class="label">Aynı Ay Üretim (m³)</div></div>
+        <div class="stat"><div class="num">${o.m3BasinaTutkal!=null?o.m3BasinaTutkal.toFixed(1):'—'}</div><div class="label">m³ Başına Tutkal</div></div>
       </div>
       <div style="margin-top:8px;">
         ${renderKirilimTablosuSayi('Vardiya Bazlı Harcanan', o.vardiyaBazli)}
@@ -980,6 +985,7 @@
       state.activeTab = t.dataset.tab; state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
       if(state.activeTab==='tutkal' && !state.tutkalLoaded){ loadTutkal(); }
+      if(state.activeTab==='tutkal' && !state.gunlukUretimLoaded){ loadGunlukUretim(true); }
       render();
     }
     else if(action==='filter'){ state.filterStatus = t.dataset.status; render(); }
