@@ -687,12 +687,69 @@
   }
 
   // ---------- Tutkal Takip ----------
+  function hesaplaTutkalOzet(ay){
+    const kayitlar = state.tutkal.filter(r => r.tarih && r.tarih.slice(0,7)===ay).sort((a,b)=>(a.tarih+a.vardiya).localeCompare(b.tarih+b.vardiya));
+    const toplamHarcanan = kayitlar.reduce((s,r)=>s+(r.harcanan||0),0);
+    const toplamEklenen = kayitlar.reduce((s,r)=>s+(r.eklenen||0),0);
+    const vardiyaBazli = {};
+    kayitlar.forEach(r => { const k='Vardiya '+r.vardiya; vardiyaBazli[k]=(vardiyaBazli[k]||0)+(r.harcanan||0); });
+    return {
+      kayitSayisi: kayitlar.length,
+      toplamHarcanan, toplamEklenen,
+      ortVardiya: kayitlar.length ? toplamHarcanan/kayitlar.length : 0,
+      ayBasiKalan: kayitlar.length ? kayitlar[0].dunden_kalan : null,
+      aySonuKalan: kayitlar.length ? kayitlar[kayitlar.length-1].kalan : null,
+      vardiyaBazli
+    };
+  }
+
   function renderTutkalTab(rol){
+    const view = state.tutkalView || 'gunluk';
     const kayitlar = state.tutkal.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
     return `
       <div class="filters">
-        ${canEdit(rol) ? `<button class="row-btn primary" data-action="tutkal-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <div class="chip ${view==='gunluk'?'active':''}" data-action="tk-view" data-view="gunluk">Günlük Kayıtlar</div>
+        <div class="chip ${view==='ozet'?'active':''}" data-action="tk-view" data-view="ozet">Aylık Özet</div>
+        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="tutkal-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
       </div>
+      ${view==='gunluk' ? renderTutkalGunluk(kayitlar, rol) : renderTutkalOzet(state.ozetAy)}
+    `;
+  }
+
+  function renderTutkalOzet(ay){
+    const o = hesaplaTutkalOzet(ay);
+    return `
+      <div class="filters">
+        <input type="month" value="${ay}" data-action="ozet-ay" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+        <span class="hint" style="align-self:center;">${escapeHtml(ayAdi(ay))} özeti</span>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.kayitSayisi}</div><div class="label">Vardiya Kaydı</div></div>
+        <div class="stat"><div class="num">${o.toplamHarcanan.toFixed(0)}</div><div class="label">Toplam Harcanan</div></div>
+        <div class="stat"><div class="num">${o.toplamEklenen.toFixed(0)}</div><div class="label">Toplam Eklenen (Stok)</div></div>
+        <div class="stat"><div class="num">${o.ortVardiya.toFixed(0)}</div><div class="label">Ort. Vardiya Başı Harcanan</div></div>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.ayBasiKalan!=null?o.ayBasiKalan.toFixed(0):'—'}</div><div class="label">Ay Başı Stok</div></div>
+        <div class="stat"><div class="num">${o.aySonuKalan!=null?o.aySonuKalan.toFixed(0):'—'}</div><div class="label">Ay Sonu Stok</div></div>
+      </div>
+      <div style="margin-top:8px;">
+        ${renderKirilimTablosuSayi('Vardiya Bazlı Harcanan', o.vardiyaBazli)}
+      </div>
+    `;
+  }
+
+  function renderKirilimTablosuSayi(baslik, obj){
+    const girdiler = Object.entries(obj).sort((a,b)=>b[1]-a[1]);
+    if(girdiler.length===0) return '';
+    return `<div class="card" style="padding:16px;max-width:360px;">
+      <h3 style="font-size:14px;margin-bottom:10px;">${escapeHtml(baslik)}</h3>
+      ${girdiler.map(([k,v])=>`<div class="meta-row"><span>${escapeHtml(k)}</span><b>${v.toFixed(0)}</b></div>`).join('')}
+    </div>`;
+  }
+
+  function renderTutkalGunluk(kayitlar, rol){
+    return `
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz tutkal kaydı girilmemiş.</div></div>` : `
       <div class="card">
         <table>
@@ -931,6 +988,7 @@
     else if(action==='detail'){ const o = state.orders.find(x=>x.id===t.dataset.id); const list = sortedFilteredOrders(); const withNo = list.find(x=>x.id===o.id); state.modal={type:'detail', order:Object.assign({},o,{no:withNo?withNo.no:''})}; render(); }
     else if(action==='open-asama'){ state.modal = { type:'kapasite', key: t.dataset.key }; render(); }
     else if(action==='ut-view'){ state.uretimTakipView = t.dataset.view; render(); }
+    else if(action==='tk-view'){ state.tutkalView = t.dataset.view; render(); }
     else if(action==='uretim-ekle'){ state.modal = { type:'uretim-kaydi', kayit:null }; render(); }
     else if(action==='uretim-duzenle'){ const r = state.gunlukUretim.find(x=>x.id===t.dataset.id); state.modal = { type:'uretim-kaydi', kayit:r }; render(); }
     else if(action==='tutkal-ekle'){ state.modal = { type:'tutkal-kaydi', kayit:null }; render(); }
