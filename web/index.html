@@ -53,9 +53,6 @@
   .gate-title{color:#fff;font-size:32px;font-weight:700;text-align:center;}
   .gate-sub{color:#9aa0a6;font-size:14px;max-width:420px;text-align:center;line-height:1.5;margin-bottom:8px;}
   .auth-card{width:340px;background:var(--shell-2);border:1px solid #3a3f45;border-radius:var(--radius);padding:26px;color:#fff;}
-  .auth-tabs{display:flex;gap:4px;margin-bottom:18px;background:#1c1f22;border-radius:8px;padding:3px;}
-  .auth-tab{flex:1;text-align:center;padding:8px;border-radius:6px;font-size:13px;color:#9aa0a6;}
-  .auth-tab.active{background:var(--amber);color:#1c1f22;font-weight:600;}
   .auth-field{margin-bottom:12px;display:flex;flex-direction:column;gap:5px;}
   .auth-field label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#9aa0a6;}
   .auth-field input,.auth-field select{padding:10px 12px;border-radius:7px;border:1px solid #4a4f55;background:#1c1f22;color:#fff;font-size:14px;}
@@ -76,6 +73,9 @@
   .role-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);}
   .role-badge.uretim .dot{background:var(--green);}
   .switch-btn{background:transparent;border:1px solid #4a4f55;color:#c9ccd0;padding:6px 12px;border-radius:20px;font-size:13px;}
+  .modul-switch{display:flex;background:var(--shell-2);border:1px solid #3a3f45;border-radius:20px;padding:3px;gap:2px;}
+  .modul-btn{padding:6px 14px;border-radius:20px;font-size:13px;color:#9aa0a6;}
+  .modul-btn.active{background:var(--amber);color:#1c1f22;font-weight:600;}
   .switch-btn:hover{border-color:#fff;color:#fff;}
 
   .tabs{display:flex;gap:4px;padding:0 24px;background:var(--shell-2);}
@@ -154,23 +154,28 @@
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzanF5b2lidmRvcWh2aWpobXdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NjY5MzQsImV4cCI6MjA5ODQ0MjkzNH0.TgSbpElM7N1qoEB145u7_4yTxcsUe0eupiRe9Vxp7Bw";
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const URETIM_KAYIT_KODU = "uretim2026"; // Üretim rolüyle kayıt olmak için gereken kod — değiştirmek için burayı düzenle
   const CINS_OPTIONS = ["Kavak/Kavak", "Kavak/Huş", "Kayın/Kayın"];
   const ASAMA_OPTIONS = ["Sırada", "Üretimde", "Ebatlamada", "Sevkiyatta"];
+  const MAKINE_OPTIONS = ["Ç-K-P", "K-K-P"];
 
   let state = {
     user: null,
     profile: null,        // {id, ad_soyad, rol}
     profilesMap: {},
-    authView: 'login',     // 'login' | 'signup'
     authError: '',
     authOk: '',
     authBusy: false,
+    modul: null,           // 'satis' | 'uretim'
     activeTab: 'liste',
     filterStatus: 'bekliyor',
     search: '',
     orders: [],
     hatKapasiteleri: {},
+    gunlukUretim: [],
+    gunlukUretimLoaded: false,
+    tutkal: [],
+    tutkalLoaded: false,
+    ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
     loading: true,
     modal: null,
     toast: null
@@ -182,6 +187,17 @@
   function fmtDateTime(iso){ if(!iso) return '—'; const d = new Date(iso); if(isNaN(d)) return iso; return d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}); }
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   function calcM3(en,boy,kalinlik,adet){ const v = (parseFloat(en)||0)*(parseFloat(boy)||0)*(parseFloat(kalinlik)||0)*(parseFloat(adet)||0)/10000000; return Math.round(v*1000)/1000; }
+  function calcTutkal(input, dundenKalan){
+    const n = x => parseFloat(x)||0;
+    const ucSabit = (n(input.alt)+n(input.ust)+n(input.sog))*7;
+    const kuH = n(input.k_u)*38;
+    const kkH = n(input.k_k)*18;
+    const ibH = n(input.i_b)*18;
+    const toplam = ucSabit+kuH+kkH+ibH;
+    const harcanan = n(dundenKalan) - toplam - n(input.m_g);
+    const kalan = toplam + n(input.eklenen);
+    return { toplam, harcanan, kalan };
+  }
   function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function sorumluAdi(id){ return state.profilesMap[id] || '—'; }
 
@@ -191,13 +207,27 @@
     if(session){ await afterLogin(session.user); } else { state.loading=false; render(); }
   }
 
+  function moduller(rol){
+    if(rol==='satis') return ['satis'];
+    if(rol==='vardiya_amiri') return ['uretim'];
+    if(rol==='admin' || rol==='patron') return ['satis','uretim'];
+    return [];
+  }
+  function defaultTab(modul){
+    return modul==='satis' ? 'takip' : 'uretim_takip';
+  }
+
   async function afterLogin(user){
     state.user = user;
     const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
     state.profile = profile;
+    const mods = moduller(profile ? profile.rol : null);
+    state.modul = mods[0] || null;
+    state.activeTab = defaultTab(state.modul);
     await loadProfilesMap();
     await loadOrders();
     await loadHatKapasiteleri();
+    if(state.activeTab==='uretim_takip') await loadGunlukUretim(true);
     subscribeRealtime();
   }
 
@@ -223,39 +253,25 @@
       .subscribe();
   }
 
-  async function doLogin(email, password){
+  async function doLogin(adSoyad, password){
     state.authBusy = true; state.authError=''; render();
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    const { data: eslesen, error: bulErr } = await sb.from('profiles')
+      .select('giris_epostasi')
+      .ilike('ad_soyad', adSoyad.trim())
+      .maybeSingle();
+    if(bulErr || !eslesen || !eslesen.giris_epostasi){
+      state.authBusy = false; state.authError = 'Bu isimde bir kullanıcı bulunamadı.'; render(); return;
+    }
+    const { data, error } = await sb.auth.signInWithPassword({ email: eslesen.giris_epostasi, password });
     state.authBusy = false;
-    if(error){ state.authError = 'Giriş başarısız: e-posta veya şifre hatalı.'; render(); return; }
+    if(error){ state.authError = 'Giriş başarısız: kullanıcı adı veya şifre hatalı.'; render(); return; }
     await afterLogin(data.user);
     render();
   }
 
-  async function doSignup(adSoyad, email, password, rol, kod){
-    state.authBusy = true; state.authError=''; state.authOk=''; render();
-    if(rol === 'uretim' && kod !== URETIM_KAYIT_KODU){
-      state.authBusy = false; state.authError = 'Üretim kayıt kodu hatalı.'; render(); return;
-    }
-    const { data, error } = await sb.auth.signUp({ email, password });
-    if(error){ state.authBusy=false; state.authError = 'Kayıt başarısız: ' + error.message; render(); return; }
-    if(!data.user){ state.authBusy=false; state.authError = 'Kayıt oluşturulamadı.'; render(); return; }
-    const { error: profErr } = await sb.from('profiles').insert([{ id: data.user.id, ad_soyad: adSoyad, rol: rol }]);
-    state.authBusy = false;
-    if(profErr){ state.authError = 'Profil oluşturulamadı: ' + profErr.message; render(); return; }
-    if(data.session){
-      await afterLogin(data.user);
-      render();
-    }else{
-      state.authOk = 'Hesabın oluşturuldu. E-postana gelen onay linkine tıkladıktan sonra giriş yapabilirsin.';
-      state.authView = 'login';
-      render();
-    }
-  }
-
   async function doLogout(){
     await sb.auth.signOut();
-    state = Object.assign(state, { user:null, profile:null, orders:[], authView:'login', authError:'', authOk:'', activeTab:'liste', filterStatus:'bekliyor', search:'', modal:null });
+    state = Object.assign(state, { user:null, profile:null, modul:null, orders:[], gunlukUretim:[], gunlukUretimLoaded:false, tutkal:[], tutkalLoaded:false, authError:'', authOk:'', activeTab:'liste', filterStatus:'bekliyor', search:'', modal:null });
     render();
   }
 
@@ -264,6 +280,24 @@
     if(!silent){ state.loading = true; render(); }
     const { data, error } = await sb.from('siparisler').select('*').order('created_at', { ascending:false });
     if(!error) state.orders = data || [];
+    state.loading = false;
+    render();
+  }
+
+  async function loadGunlukUretim(silent){
+    if(!silent){ state.loading = true; render(); }
+    const { data, error } = await sb.from('gunluk_uretim').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    if(!error) state.gunlukUretim = data || [];
+    state.gunlukUretimLoaded = true;
+    state.loading = false;
+    render();
+  }
+
+  async function loadTutkal(silent){
+    if(!silent){ state.loading = true; render(); }
+    const { data, error } = await sb.from('tutkal_takip').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    if(!error) state.tutkal = data || [];
+    state.tutkalLoaded = true;
     state.loading = false;
     render();
   }
@@ -279,40 +313,69 @@
     return list.slice().sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
   }
 
+  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron' };
+  const MODUL_SEKMELERI = {
+    satis: [ {key:'giris', label:'Sipariş Giriş', roller:['satis','admin']}, {key:'takip', label:'Sipariş Takip', roller:['satis','admin','patron']} ],
+    uretim: [
+      {key:'uretim_takip', label:'Üretim Takip', roller:['vardiya_amiri','admin','patron']},
+      {key:'liste', label:'Mevcut Siparişler', roller:['vardiya_amiri','admin','patron']},
+      {key:'tutkal', label:'Tutkal Takip', roller:['vardiya_amiri','admin','patron']},
+      {key:'hat', label:'Kapasite Raporu', roller:['vardiya_amiri','admin','patron']}
+    ]
+  };
+  function canEdit(rol){ return rol==='admin' || rol==='vardiya_amiri'; }
+  function canEditSatis(rol){ return rol==='admin' || rol==='satis'; }
+
   // ---------- Render ----------
   function render(){
     if(!state.user){ renderGate(); return; }
+    const rol = state.profile ? state.profile.rol : null;
+    const mods = moduller(rol);
+    if(!mods.includes(state.modul)) state.modul = mods[0];
+    const sekmeler = (MODUL_SEKMELERI[state.modul]||[]).filter(s => s.roller.includes(rol));
+    if(!sekmeler.find(s=>s.key===state.activeTab)) state.activeTab = sekmeler[0] ? sekmeler[0].key : null;
+
     const orders = state.orders;
     const bekleyen = orders.filter(o=>o.status==='bekliyor').length;
     const uretilen = orders.filter(o=>o.status==='uretildi').length;
     const bekleyenM3 = orders.filter(o=>o.status==='bekliyor').reduce((s,o)=>s+(o.m3||0),0);
     const list = sortedFilteredOrders();
-    const rol = state.profile ? state.profile.rol : null;
 
     app.innerHTML = `
       <div class="veneer"></div>
       <header>
         <div class="brand"><div class="eyebrow">Kontraplak Üretim</div><h1>Sipariş Takip</h1></div>
         <div class="role-chip">
-          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${rol==='uretim'?'Üretim':'Satış'}</div>
+          ${mods.length>1 ? `
+          <div class="modul-switch">
+            <div class="modul-btn ${state.modul==='satis'?'active':''}" data-action="modul" data-modul="satis">Satış</div>
+            <div class="modul-btn ${state.modul==='uretim'?'active':''}" data-action="modul" data-modul="uretim">Üretim</div>
+          </div>` : ''}
+          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>
           <button class="switch-btn" data-action="logout">Çıkış Yap</button>
         </div>
       </header>
       <div class="tabs">
-        ${rol==='satis' ? `<div class="tab ${state.activeTab==='yeni'?'active':''}" data-action="tab" data-tab="yeni">Yeni Sipariş</div>` : ''}
-        <div class="tab ${state.activeTab==='liste'?'active':''}" data-action="tab" data-tab="liste">Siparişler</div>
-        <div class="tab ${state.activeTab==='hat'?'active':''}" data-action="tab" data-tab="hat">Üretim Hattı</div>
+        ${sekmeler.map(s=>`<div class="tab ${state.activeTab===s.key?'active':''}" data-action="tab" data-tab="${s.key}">${s.label}</div>`).join('')}
       </div>
       <main>
         ${state.toast ? `<div class="msg ${state.toast.type==='ok'?'ok':'err'}">${escapeHtml(state.toast.text)}</div>` : ''}
-        ${state.loading ? `<div class="loading">Yükleniyor…</div>` : (
-          state.activeTab==='yeni' ? renderForm() :
-          state.activeTab==='hat' ? renderHatTab(rol) :
-          renderListTab(orders,bekleyen,uretilen,bekleyenM3,list,rol)
-        )}
+        ${state.loading ? `<div class="loading">Yükleniyor…</div>` : renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list)}
       </main>
       ${state.modal ? renderModal(rol) : ''}
     `;
+  }
+
+  function renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list){
+    switch(state.activeTab){
+      case 'giris': return renderForm();
+      case 'takip': return renderListTab(orders,bekleyen,uretilen,bekleyenM3,list,rol,true);
+      case 'liste': return renderListTab(orders,bekleyen,uretilen,bekleyenM3,list,rol,false);
+      case 'hat': return renderHatTab(rol);
+      case 'uretim_takip': return renderUretimTakipTab(rol);
+      case 'tutkal': return renderTutkalTab(rol);
+      default: return '';
+    }
   }
 
   function renderListTab(orders,bekleyen,uretilen,bekleyenM3,list,rol){
@@ -344,14 +407,18 @@
     const editedBadge = o.updated_at && o.updated_at !== o.created_at ? `<div class="hint" style="margin-top:2px;">düzenlendi: ${fmtDate(o.updated_at)}</div>` : '';
     let actionBtn = '';
     if(o.status==='bekliyor'){
-      if(rol==='satis'){ actionBtn = `<button class="row-btn" data-action="edit" data-id="${o.id}">Düzenle</button>`; }
-      else{ actionBtn = `<button class="row-btn primary" data-action="mark" data-id="${o.id}">Üretildi işaretle</button>`; }
+      if(rol==='patron'){ actionBtn = ''; }
+      else if(rol==='admin'){
+        actionBtn = `<button class="row-btn" data-action="edit" data-id="${o.id}">Düzenle</button> <button class="row-btn primary" data-action="mark" data-id="${o.id}">Üretildi işaretle</button>`;
+      }
+      else if(rol==='satis' && o.sorumlu_id===state.user.id){ actionBtn = `<button class="row-btn" data-action="edit" data-id="${o.id}">Düzenle</button>`; }
+      else if(canEdit(rol)){ actionBtn = `<button class="row-btn primary" data-action="mark" data-id="${o.id}">Üretildi işaretle</button>`; }
     }else{
       actionBtn = `<button class="row-btn ghost" data-action="detail" data-id="${o.id}">Detay</button>`;
     }
     let stageCell = '—';
     if(o.status==='bekliyor'){
-      if(rol==='uretim'){
+      if(canEdit(rol)){
         stageCell = `<select data-action="update-stage" data-id="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff;">
           ${ASAMA_OPTIONS.map(a=>`<option value="${a}" ${o.asama===a?'selected':''}>${a}</option>`).join('')}
         </select>`;
@@ -411,7 +478,7 @@
   function kapasiteMetni(key, rol){
     const a = state.hatKapasiteleri[key];
     if(!a) return '';
-    const birim = rol==='uretim' ? 'ikisi' : (a.gorunur_birim||'ikisi');
+    const birim = canEdit(rol) ? 'ikisi' : (a.gorunur_birim||'ikisi');
     const parts = [];
     if((birim==='m3'||birim==='ikisi') && a.kapasite_m3!=null) parts.push(a.kapasite_m3+' m³/gün');
     if((birim==='adet'||birim==='ikisi') && a.kapasite_adet!=null) parts.push(a.kapasite_adet+' adet/gün');
@@ -421,7 +488,7 @@
   function renderHatTab(rol){
     const cap = (k) => escapeHtml(kapasiteMetni(k, rol) || '—');
     return `
-      <p class="hint" style="margin-bottom:14px;">Bir aşamaya tıklayarak kapasite bilgisini görebilir${rol==='uretim'?' ve düzenleyebilirsin':''}.</p>
+      <p class="hint" style="margin-bottom:14px;">Bir aşamaya tıklayarak kapasite bilgisini görebilir${canEdit(rol)?' ve düzenleyebilirsin':''}.</p>
       <div class="card" style="padding:20px;">
         <svg width="100%" viewBox="0 0 680 742" xmlns="http://www.w3.org/2000/svg" role="img" style="display:block;">
           <defs>
@@ -515,17 +582,152 @@
     `;
   }
 
+  // ---------- Üretim Takip ----------
+  function ayAdi(ym){
+    const aylar = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    const [y,m] = ym.split('-');
+    return aylar[parseInt(m,10)-1] + ' ' + y;
+  }
+
+  function hesaplaOzet(ay){
+    const kayitlar = state.gunlukUretim.filter(r => r.tarih && r.tarih.slice(0,7)===ay);
+    const toplamAdet = kayitlar.reduce((s,r)=>s+(r.adet||0),0);
+    const toplamM3 = kayitlar.reduce((s,r)=>s+(r.m3||0),0);
+    const fireAdet = kayitlar.reduce((s,r)=>s+(r.fire_adet||0),0);
+    const fireM3 = kayitlar.reduce((s,r)=>s+(r.fire_m3||0),0);
+    const gunler = new Set(kayitlar.map(r=>r.tarih));
+    const grupla = (keyFn) => {
+      const m = {};
+      kayitlar.forEach(r => { const k = keyFn(r) || '—'; m[k] = (m[k]||0) + (r.m3||0); });
+      return m;
+    };
+    return {
+      kayitSayisi: kayitlar.length,
+      uretimGunu: gunler.size,
+      toplamAdet, toplamM3, fireAdet, fireM3,
+      firePct: toplamM3 ? (fireM3/toplamM3*100) : 0,
+      ortGunM3: gunler.size ? (toplamM3/gunler.size) : 0,
+      makineBazli: grupla(r=>r.makine),
+      cinsBazli: grupla(r=>r.cins),
+      vardiyaBazli: grupla(r=>'Vardiya '+r.vardiya),
+      ustaBazli: grupla(r=>r.usta)
+    };
+  }
+
+  function renderKirilimTablosu(baslik, obj){
+    const girdiler = Object.entries(obj).sort((a,b)=>b[1]-a[1]);
+    if(girdiler.length===0) return '';
+    return `<div class="card" style="padding:16px;">
+      <h3 style="font-size:14px;margin-bottom:10px;">${escapeHtml(baslik)}</h3>
+      ${girdiler.map(([k,v])=>`<div class="meta-row"><span>${escapeHtml(k)}</span><b>${v.toFixed(3)} m³</b></div>`).join('')}
+    </div>`;
+  }
+
+  function renderUretimTakipTab(rol){
+    const view = state.uretimTakipView || 'gunluk';
+    const kayitlar = state.gunlukUretim.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
+    const ay = state.ozetAy;
+    const ozet = hesaplaOzet(ay);
+
+    return `
+      <div class="filters">
+        <div class="chip ${view==='gunluk'?'active':''}" data-action="ut-view" data-view="gunluk">Günlük Kayıtlar</div>
+        <div class="chip ${view==='ozet'?'active':''}" data-action="ut-view" data-view="ozet">Aylık Özet</div>
+        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="uretim-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+      </div>
+      ${view==='gunluk' ? renderGunlukKayitlar(kayitlar, rol) : renderAylikOzet(ay, ozet)}
+    `;
+  }
+
+  function renderGunlukKayitlar(kayitlar, rol){
+    if(kayitlar.length===0) return `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz üretim kaydı girilmemiş.</div></div>`;
+    return `<div class="card">
+      <table>
+        <thead><tr><th>Tarih</th><th>Vardiya</th><th>Usta</th><th>Makine</th><th>Cins</th><th>Ölçü</th><th>Adet</th><th>Fire</th><th>m³</th><th></th></tr></thead>
+        <tbody>${kayitlar.map(r=>`<tr>
+          <td>${fmtDate(r.tarih)}</td>
+          <td class="mono">${r.vardiya}</td>
+          <td>${escapeHtml(r.usta||'—')}</td>
+          <td>${escapeHtml(r.makine)}</td>
+          <td>${escapeHtml(r.cins)}</td>
+          <td class="mono">${r.boy||'—'}×${r.en||'—'}×${r.kalinlik||'—'}</td>
+          <td class="mono">${r.adet}</td>
+          <td class="mono">${r.fire_adet||0}</td>
+          <td class="mono">${(r.m3||0).toFixed(3)}</td>
+          <td>${canEdit(rol) ? `<button class="row-btn" data-action="uretim-duzenle" data-id="${r.id}">Düzenle</button>` : ''}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  function renderAylikOzet(ay, o){
+    return `
+      <div class="filters">
+        <input type="month" value="${ay}" data-action="ozet-ay" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+        <span class="hint" style="align-self:center;">${escapeHtml(ayAdi(ay))} özeti</span>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.uretimGunu}</div><div class="label">Üretim Günü</div></div>
+        <div class="stat"><div class="num">${o.toplamAdet}</div><div class="label">Toplam Adet</div></div>
+        <div class="stat"><div class="num">${o.toplamM3.toFixed(2)}</div><div class="label">Toplam m³</div></div>
+        <div class="stat"><div class="num">${o.ortGunM3.toFixed(2)}</div><div class="label">Ort. Günlük m³</div></div>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.fireAdet}</div><div class="label">Fire Adet</div></div>
+        <div class="stat"><div class="num">${o.fireM3.toFixed(3)}</div><div class="label">Fire m³</div></div>
+        <div class="stat"><div class="num">%${o.firePct.toFixed(2)}</div><div class="label">Fire Oranı</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+        ${renderKirilimTablosu('Makine Bazlı (m³)', o.makineBazli)}
+        ${renderKirilimTablosu('Cins Bazlı (m³)', o.cinsBazli)}
+        ${renderKirilimTablosu('Vardiya Bazlı (m³)', o.vardiyaBazli)}
+        ${renderKirilimTablosu('Usta Bazlı (m³)', o.ustaBazli)}
+      </div>
+    `;
+  }
+
+  // ---------- Tutkal Takip ----------
+  function renderTutkalTab(rol){
+    const kayitlar = state.tutkal.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
+    return `
+      <div class="filters">
+        ${canEdit(rol) ? `<button class="row-btn primary" data-action="tutkal-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+      </div>
+      ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz tutkal kaydı girilmemiş.</div></div>` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Tarih</th><th>Vrd.</th><th>Alt</th><th>Üst</th><th>Soğ.</th><th>K.U.</th><th>K.K.</th><th>İ.B.</th><th>M.G.</th><th>Eklenen</th><th>Harcanan</th><th>Kalan</th><th></th></tr></thead>
+          <tbody>${kayitlar.map(r=>`<tr>
+            <td>${fmtDate(r.tarih)}</td>
+            <td class="mono">${r.vardiya}</td>
+            <td class="mono">${r.alt}</td>
+            <td class="mono">${r.ust}</td>
+            <td class="mono">${r.sog}</td>
+            <td class="mono">${r.k_u}</td>
+            <td class="mono">${r.k_k}</td>
+            <td class="mono">${r.i_b}</td>
+            <td class="mono">${r.m_g}</td>
+            <td class="mono">${r.eklenen||0}</td>
+            <td class="mono">${r.harcanan}</td>
+            <td class="mono">${r.kalan}</td>
+            <td>${canEdit(rol) ? `<button class="row-btn" data-action="tutkal-duzenle" data-id="${r.id}">Düzenle</button>` : ''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`}
+    `;
+  }
+
   function renderModal(rol){
     const m = state.modal;
     if(m.type==='edit'){
-      return `<div class="overlay" data-action="overlay-close"><div class="modal" onclick="event.stopPropagation()">
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
         <div class="modal-head"><h3>Siparişi Düzenle</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">${renderForm(m.order)}</div>
       </div></div>`;
     }
     if(m.type==='mark'){
       const o = m.order;
-      return `<div class="overlay" data-action="overlay-close"><div class="modal" onclick="event.stopPropagation()">
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
         <div class="modal-head"><h3>Üretildi Olarak İşaretle</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">
           <p class="hint" style="margin-bottom:14px;">Sipariş #${o.no} · ${escapeHtml(o.cins)} · ${o.en}×${o.boy}×${o.kalinlik} · Planlanan ${o.adet} adet / ${(o.m3||0).toFixed(3)} m³</p>
@@ -546,7 +748,7 @@
     }
     if(m.type==='detail'){
       const o = m.order;
-      return `<div class="overlay" data-action="overlay-close"><div class="modal" onclick="event.stopPropagation()">
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
         <div class="modal-head"><h3>Sipariş #${o.no} Detayı</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">
           <div class="meta-row"><span>Cins</span><b>${escapeHtml(o.cins)}</b></div>
@@ -570,9 +772,9 @@
       const key = m.key;
       const a = state.hatKapasiteleri[key] || {};
       const ad = HAT_ADLAR[key] || key;
-      if(rol!=='uretim'){
+      if(!canEdit(rol)){
         const birim = a.gorunur_birim || 'ikisi';
-        return `<div class="overlay" data-action="overlay-close"><div class="modal" onclick="event.stopPropagation()">
+        return `<div class="overlay" data-action="overlay-close"><div class="modal">
           <div class="modal-head"><h3>${escapeHtml(ad)}</h3><button class="close-x" data-action="close-modal">×</button></div>
           <div class="modal-body">
             ${(birim==='m3'||birim==='ikisi') ? `<div class="meta-row"><span>Kapasite (m³/gün)</span><b>${a.kapasite_m3!=null?a.kapasite_m3:'—'}</b></div>` : ''}
@@ -583,7 +785,7 @@
           <div class="modal-foot"><button class="btn" data-action="close-modal">Kapat</button></div>
         </div></div>`;
       }
-      return `<div class="overlay" data-action="overlay-close"><div class="modal" onclick="event.stopPropagation()">
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
         <div class="modal-head"><h3>${escapeHtml(ad)} — Kapasite</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">
           <form id="kapasite-form">
@@ -608,12 +810,83 @@
         </div>
       </div></div>`;
     }
+    if(m.type==='uretim-kaydi'){
+      const r = m.kayit || {};
+      const isEdit = !!m.kayit;
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>${isEdit?'Üretim Kaydını Düzenle':'Yeni Üretim Kaydı'}</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="uretim-kaydi-form">
+            <div class="form-grid">
+              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
+              <div class="field"><label>Vardiya</label><select name="vardiya">
+                <option value="1" ${r.vardiya===1?'selected':''}>1</option>
+                <option value="2" ${r.vardiya===2?'selected':''}>2</option>
+                <option value="3" ${r.vardiya===3?'selected':''}>3</option>
+              </select></div>
+              <div class="field full"><label>Usta</label><input type="text" name="usta" value="${escapeHtml(r.usta||'')}" placeholder="o vardiyada çalışan usta"></div>
+              <div class="field"><label>Makine</label><select name="makine">
+                ${MAKINE_OPTIONS.map(mo=>`<option value="${mo}" ${r.makine===mo?'selected':''}>${mo}</option>`).join('')}
+              </select></div>
+              <div class="field"><label>Cins</label><select name="cins">
+                ${CINS_OPTIONS.map(c=>`<option value="${escapeHtml(c)}" ${r.cins===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
+              </select></div>
+              <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" value="${r.boy||''}"></div>
+              <div class="field"><label>En (cm)</label><input type="number" step="any" min="0" name="en" value="${r.en||''}"></div>
+              <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" value="${r.kalinlik||''}"></div>
+              <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${r.adet||''}"></div>
+              <div class="field"><label>Fire Adet</label><input type="number" step="1" min="0" name="fire_adet" value="${r.fire_adet||0}"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="uk-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='tutkal-kaydi'){
+      const r = m.kayit || {};
+      const isEdit = !!m.kayit;
+      const sonKayit = state.tutkal.slice().sort((a,b)=>(b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya))[0];
+      const dundenKalan = isEdit ? r.dunden_kalan : (sonKayit ? sonKayit.kalan : 0);
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>${isEdit?'Tutkal Kaydını Düzenle':'Yeni Tutkal Kaydı'}</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <p class="hint" style="margin-bottom:12px;">Dünden kalan: <b>${dundenKalan}</b></p>
+          <form id="tutkal-kaydi-form" data-dunden="${dundenKalan}">
+            <div class="form-grid">
+              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
+              <div class="field"><label>Vardiya</label><select name="vardiya">
+                <option value="1" ${r.vardiya===1?'selected':''}>1</option>
+                <option value="2" ${r.vardiya===2?'selected':''}>2</option>
+                <option value="3" ${r.vardiya===3?'selected':''}>3</option>
+              </select></div>
+              <div class="field"><label>Alt</label><input type="number" step="any" name="alt" required value="${r.alt!=null?r.alt:''}"></div>
+              <div class="field"><label>Üst</label><input type="number" step="any" name="ust" required value="${r.ust!=null?r.ust:''}"></div>
+              <div class="field"><label>Soğ.</label><input type="number" step="any" name="sog" required value="${r.sog!=null?r.sog:''}"></div>
+              <div class="field"><label>K.U.</label><input type="number" step="any" name="k_u" required value="${r.k_u!=null?r.k_u:''}"></div>
+              <div class="field"><label>K.K.</label><input type="number" step="any" name="k_k" required value="${r.k_k!=null?r.k_k:''}"></div>
+              <div class="field"><label>İ.B.</label><input type="number" step="any" name="i_b" required value="${r.i_b!=null?r.i_b:''}"></div>
+              <div class="field"><label>M.G.</label><input type="number" step="any" name="m_g" required value="${r.m_g!=null?r.m_g:''}"></div>
+              <div class="field"><label>Eklenen <span class="hint">(yeni stok geldiyse)</span></label><input type="number" step="any" name="eklenen" value="${r.eklenen||0}"></div>
+              <div class="field readout"><label>Harcanan (otomatik)</label><input type="text" id="tk-harcanan-readout" readonly value="${r.harcanan!=null?r.harcanan:0}"></div>
+              <div class="field readout"><label>Kalan (otomatik)</label><input type="text" id="tk-kalan-readout" readonly value="${r.kalan!=null?r.kalan:0}"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
     return '';
   }
 
 
   function renderGate(){
-    const isLogin = state.authView === 'login';
     app.innerHTML = `
       <div class="veneer"></div>
       <div class="gate">
@@ -621,36 +894,17 @@
         <div class="gate-title">Sipariş Takip</div>
         <div class="gate-sub">Satışçılar sipariş girer, üretim tamamlandığında burada güncellenir ve otomatik arşivlenir.</div>
         <div class="auth-card">
-          <div class="auth-tabs">
-            <div class="auth-tab ${isLogin?'active':''}" data-action="auth-tab" data-view="login">Giriş Yap</div>
-            <div class="auth-tab ${!isLogin?'active':''}" data-action="auth-tab" data-view="signup">Kayıt Ol</div>
-          </div>
           <form id="auth-form">
-            ${!isLogin ? `<div class="auth-field"><label>Ad Soyad</label><input type="text" name="ad_soyad" required></div>` : ''}
-            <div class="auth-field"><label>E-posta</label><input type="email" name="email" required></div>
+            <div class="auth-field"><label>Kullanıcı Adı (Ad Soyad)</label><input type="text" name="ad_soyad" required autocomplete="username"></div>
             <div class="auth-field"><label>Şifre</label><input type="password" name="password" required minlength="6"></div>
-            ${!isLogin ? `
-            <div class="auth-field"><label>Rol</label>
-              <select name="rol" id="signup-rol">
-                <option value="satis">Satış</option>
-                <option value="uretim">Üretim</option>
-              </select>
-            </div>
-            <div class="auth-field" id="kod-field" style="display:none;"><label>Üretim Kayıt Kodu</label><input type="text" name="kod"></div>
-            ` : ''}
-            <button type="submit" class="auth-submit" ${state.authBusy?'disabled':''}>${state.authBusy ? 'Lütfen bekleyin…' : (isLogin?'Giriş Yap':'Hesap Oluştur')}</button>
+            <button type="submit" class="auth-submit" ${state.authBusy?'disabled':''}>${state.authBusy ? 'Lütfen bekleyin…' : 'Giriş Yap'}</button>
           </form>
           <div class="auth-error">${escapeHtml(state.authError)}</div>
           ${state.authOk ? `<div class="auth-ok">${escapeHtml(state.authOk)}</div>` : ''}
+          <div class="auth-hint" style="margin-top:14px;text-align:center;">Hesabın yok mu? Yöneticinden (Batuhan) e-posta ve şifre iste.</div>
         </div>
       </div>
     `;
-    const rolSel = document.getElementById('signup-rol');
-    if(rolSel){
-      rolSel.addEventListener('change', ()=>{
-        document.getElementById('kod-field').style.display = rolSel.value==='uretim' ? 'flex' : 'none';
-      });
-    }
   }
 
   // ---------- Events ----------
@@ -658,15 +912,29 @@
     const t = e.target.closest('[data-action]');
     if(!t){ if(e.target.classList.contains('overlay')){ state.modal=null; render(); } return; }
     const action = t.dataset.action;
-    if(action==='auth-tab'){ state.authView = t.dataset.view; state.authError=''; state.authOk=''; render(); }
-    else if(action==='logout'){ doLogout(); }
+    if(action==='logout'){ doLogout(); }
+    else if(action==='modul'){
+      state.modul = t.dataset.modul; state.activeTab = defaultTab(state.modul); state.toast=null;
+      if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
+      render();
+    }
     else if(action==='refresh'){ loadOrders(); }
-    else if(action==='tab'){ state.activeTab = t.dataset.tab; state.toast=null; render(); }
+    else if(action==='tab'){
+      state.activeTab = t.dataset.tab; state.toast=null;
+      if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
+      if(state.activeTab==='tutkal' && !state.tutkalLoaded){ loadTutkal(); }
+      render();
+    }
     else if(action==='filter'){ state.filterStatus = t.dataset.status; render(); }
     else if(action==='edit'){ const o = state.orders.find(x=>x.id===t.dataset.id); state.modal={type:'edit', order:o}; render(); }
     else if(action==='mark'){ const o = state.orders.find(x=>x.id===t.dataset.id); state.modal={type:'mark', order:o}; render(); }
     else if(action==='detail'){ const o = state.orders.find(x=>x.id===t.dataset.id); const list = sortedFilteredOrders(); const withNo = list.find(x=>x.id===o.id); state.modal={type:'detail', order:Object.assign({},o,{no:withNo?withNo.no:''})}; render(); }
     else if(action==='open-asama'){ state.modal = { type:'kapasite', key: t.dataset.key }; render(); }
+    else if(action==='ut-view'){ state.uretimTakipView = t.dataset.view; render(); }
+    else if(action==='uretim-ekle'){ state.modal = { type:'uretim-kaydi', kayit:null }; render(); }
+    else if(action==='uretim-duzenle'){ const r = state.gunlukUretim.find(x=>x.id===t.dataset.id); state.modal = { type:'uretim-kaydi', kayit:r }; render(); }
+    else if(action==='tutkal-ekle'){ state.modal = { type:'tutkal-kaydi', kayit:null }; render(); }
+    else if(action==='tutkal-duzenle'){ const r = state.tutkal.find(x=>x.id===t.dataset.id); state.modal = { type:'tutkal-kaydi', kayit:r }; render(); }
     else if(action==='close-modal' || action==='cancel-edit'){ state.modal=null; render(); }
   });
 
@@ -686,6 +954,27 @@
       const readout = document.getElementById('gercek-m3-readout');
       if(readout) readout.value = calcM3(o.en,o.boy,o.kalinlik,e.target.value).toFixed(3);
     }
+    if(e.target.closest('#uretim-kaydi-form')){
+      const form = e.target.closest('#uretim-kaydi-form');
+      const readout = document.getElementById('uk-m3-readout');
+      if(readout) readout.value = calcM3(form.en.value, form.boy.value, form.kalinlik.value, form.adet.value).toFixed(3);
+    }
+    if(e.target.closest('#tutkal-kaydi-form')){
+      const form = e.target.closest('#tutkal-kaydi-form');
+      const dunden = form.dataset.dunden;
+      const r = calcTutkal({
+        alt:form.alt.value, ust:form.ust.value, sog:form.sog.value,
+        k_u:form.k_u.value, k_k:form.k_k.value, i_b:form.i_b.value,
+        m_g:form.m_g.value, eklenen:form.eklenen.value
+      }, dunden);
+      const hr = document.getElementById('tk-harcanan-readout');
+      const kr = document.getElementById('tk-kalan-readout');
+      if(hr) hr.value = Math.round(r.harcanan*1000)/1000;
+      if(kr) kr.value = Math.round(r.kalan*1000)/1000;
+    }
+    if(e.target.matches('[data-action="ozet-ay"]')){
+      state.ozetAy = e.target.value; render();
+    }
   });
 
   app.addEventListener('change', async function(e){
@@ -703,11 +992,7 @@
 
     if(e.target.id==='auth-form'){
       const f = e.target;
-      if(state.authView==='login'){
-        await doLogin(f.email.value.trim(), f.password.value);
-      }else{
-        await doSignup(f.ad_soyad.value.trim(), f.email.value.trim(), f.password.value, f.rol.value, f.kod ? f.kod.value.trim() : '');
-      }
+      await doLogin(f.ad_soyad.value.trim(), f.password.value);
       return;
     }
 
@@ -753,7 +1038,7 @@
         const payload = Object.assign({}, data, { sorumlu_id: state.user.id, status:'bekliyor', asama: ASAMA_OPTIONS[0] });
         const { error } = await sb.from('siparisler').insert([payload]);
         state.toast = error ? {type:'err', text:'Eklenemedi: '+error.message} : {type:'ok', text:'Sipariş eklendi.'};
-        state.activeTab = 'liste';
+        state.activeTab = 'takip';
       }
       await loadOrders(true);
     }
@@ -774,6 +1059,63 @@
       state.toast = error ? {type:'err', text:'İşaretlenemedi: '+error.message} : {type:'ok', text:'Üretildi olarak işaretlendi.'};
       state.modal = null;
       await loadOrders(true);
+    }
+
+    else if(e.target.id==='uretim-kaydi-form'){
+      const f = e.target;
+      const data = {
+        tarih: f.tarih.value,
+        vardiya: parseInt(f.vardiya.value,10),
+        usta: f.usta.value.trim() || null,
+        makine: f.makine.value,
+        cins: f.cins.value,
+        boy: f.boy.value?parseFloat(f.boy.value):null,
+        en: f.en.value?parseFloat(f.en.value):null,
+        kalinlik: f.kalinlik.value?parseFloat(f.kalinlik.value):null,
+        adet: parseInt(f.adet.value,10),
+        fire_adet: f.fire_adet.value?parseInt(f.fire_adet.value,10):0
+      };
+      data.m3 = calcM3(data.en,data.boy,data.kalinlik,data.adet);
+      let error;
+      if(state.modal.kayit){
+        ({ error } = await sb.from('gunluk_uretim').update(Object.assign({}, data, { updated_at:new Date().toISOString() })).eq('id', state.modal.kayit.id));
+      }else{
+        ({ error } = await sb.from('gunluk_uretim').insert([Object.assign({}, data, { created_by: state.user.id })]));
+      }
+      state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Üretim kaydı kaydedildi.'};
+      state.modal = null;
+      await loadGunlukUretim(true);
+    }
+
+    else if(e.target.id==='tutkal-kaydi-form'){
+      const f = e.target;
+      const dunden = f.dataset.dunden;
+      const input = {
+        alt:f.alt.value, ust:f.ust.value, sog:f.sog.value,
+        k_u:f.k_u.value, k_k:f.k_k.value, i_b:f.i_b.value,
+        m_g:f.m_g.value, eklenen:f.eklenen.value || 0
+      };
+      const hesap = calcTutkal(input, dunden);
+      const data = {
+        tarih: f.tarih.value,
+        vardiya: parseInt(f.vardiya.value,10),
+        alt: parseFloat(input.alt), ust: parseFloat(input.ust), sog: parseFloat(input.sog),
+        k_u: parseFloat(input.k_u), k_k: parseFloat(input.k_k), i_b: parseFloat(input.i_b), m_g: parseFloat(input.m_g),
+        eklenen: parseFloat(input.eklenen) || 0,
+        dunden_kalan: parseFloat(dunden) || 0,
+        toplam: Math.round(hesap.toplam*1000)/1000,
+        harcanan: Math.round(hesap.harcanan*1000)/1000,
+        kalan: Math.round(hesap.kalan*1000)/1000
+      };
+      let error;
+      if(state.modal.kayit){
+        ({ error } = await sb.from('tutkal_takip').update(Object.assign({}, data, { updated_at:new Date().toISOString() })).eq('id', state.modal.kayit.id));
+      }else{
+        ({ error } = await sb.from('tutkal_takip').insert([Object.assign({}, data, { created_by: state.user.id })]));
+      }
+      state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Tutkal kaydı kaydedildi.'};
+      state.modal = null;
+      await loadTutkal(true);
     }
   });
 
