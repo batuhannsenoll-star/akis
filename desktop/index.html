@@ -171,6 +171,10 @@
     tutkal: [],
     tutkalLoaded: false,
     tumKullanicilar: [],
+    kantarGirisleri: [], kantarLoaded: false,
+    soymaCiktisi: [], soymaLoaded: false,
+    kontraplakReceteleri: {}, receteLoaded: false,
+    sistemAyarlari: {}, ayarlarLoaded: false,
     ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
     loading: true,
     modal: null,
@@ -205,12 +209,15 @@
 
   function moduller(rol){
     if(rol==='satis') return ['satis'];
-    if(rol==='vardiya_amiri') return ['uretim'];
-    if(rol==='admin' || rol==='patron') return ['satis','uretim'];
+    if(rol==='vardiya_amiri') return ['uretim','tedarik'];
+    if(rol==='satin_alma') return ['tedarik'];
+    if(rol==='admin' || rol==='patron') return ['satis','uretim','tedarik'];
     return [];
   }
   function defaultTab(modul){
-    return modul==='satis' ? 'takip' : 'uretim_takip';
+    if(modul==='satis') return 'takip';
+    if(modul==='tedarik') return 'kantar';
+    return 'uretim_takip';
   }
 
   async function afterLogin(user){
@@ -224,6 +231,13 @@
     await loadOrders();
     await loadHatKapasiteleri();
     if(state.activeTab==='uretim_takip') await loadGunlukUretim(true);
+    if(state.activeTab==='kantar'){
+      await loadKantar(true);
+      await loadSoyma(true);
+      await loadReceteler(true);
+      await loadAyarlar(true);
+      await loadGunlukUretim(true);
+    }
     subscribeRealtime();
   }
 
@@ -329,6 +343,49 @@
     render();
   }
 
+  async function loadKantar(silent){
+    if(!silent){ state.loading = true; render(); }
+    const { data, error } = await sb.from('kantar_girisleri').select('*').order('tarih', { ascending:false });
+    if(!error) state.kantarGirisleri = data || [];
+    state.kantarLoaded = true;
+    state.loading = false;
+    render();
+  }
+
+  async function loadSoyma(silent){
+    if(!silent){ state.loading = true; render(); }
+    const { data, error } = await sb.from('soyma_ciktisi').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    if(!error) state.soymaCiktisi = data || [];
+    state.soymaLoaded = true;
+    state.loading = false;
+    render();
+  }
+
+  async function loadReceteler(silent){
+    const { data, error } = await sb.from('kontraplak_receteleri').select('*');
+    if(!error){
+      state.kontraplakReceteleri = {};
+      (data||[]).forEach(r => state.kontraplakReceteleri[r.kalinlik] = r);
+    }
+    state.receteLoaded = true;
+    if(!silent) render();
+  }
+
+  async function loadAyarlar(silent){
+    const { data, error } = await sb.from('sistem_ayarlari').select('*');
+    if(!error){
+      state.sistemAyarlari = {};
+      (data||[]).forEach(a => state.sistemAyarlari[a.anahtar] = a.deger);
+    }
+    state.ayarlarLoaded = true;
+    if(!silent) render();
+  }
+
+  function ayar(anahtar, varsayilan){
+    const v = state.sistemAyarlari[anahtar];
+    return (v==null) ? varsayilan : v;
+  }
+
   function sortedFilteredOrders(){
     let list = state.orders.slice().sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
     list = list.map((o,i)=> Object.assign({}, o, {no:i+1}));
@@ -340,7 +397,8 @@
     return list.slice().sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
   }
 
-  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron' };
+  const MODUL_ADLARI = { satis:'Satış', uretim:'Üretim', tedarik:'Tedarik' };
+  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron', satin_alma:'Satın Alma' };
   const MODUL_SEKMELERI = {
     satis: [ {key:'giris', label:'Sipariş Giriş', roller:['satis','admin']}, {key:'takip', label:'Sipariş Takip', roller:['satis','admin','patron']} ],
     uretim: [
@@ -348,9 +406,17 @@
       {key:'liste', label:'Mevcut Siparişler', roller:['vardiya_amiri','admin','patron']},
       {key:'tutkal', label:'Tutkal Takip', roller:['vardiya_amiri','admin','patron']},
       {key:'hat', label:'Kapasite Raporu', roller:['vardiya_amiri','admin','patron']}
+    ],
+    tedarik: [
+      {key:'kantar', label:'Kantar', roller:['satin_alma','admin','patron']},
+      {key:'tomruk_sahasi', label:'Tomruk Sahası', roller:['satin_alma','vardiya_amiri','admin','patron']},
+      {key:'soyma_ciktisi', label:'Soyma Çıktısı', roller:['vardiya_amiri','admin','patron']},
+      {key:'uretim_planlama', label:'Üretim Planlama', roller:['vardiya_amiri','admin','patron','satin_alma']},
+      {key:'receteler', label:'Reçeteler', roller:['admin']}
     ]
   };
   function canEdit(rol){ return rol==='admin' || rol==='vardiya_amiri'; }
+  function canEditKantar(rol){ return rol==='admin' || rol==='satin_alma'; }
   function canEditSatis(rol){ return rol==='admin' || rol==='satis'; }
 
   // ---------- Render ----------
@@ -375,8 +441,7 @@
         <div class="role-chip">
           ${mods.length>1 ? `
           <div class="modul-switch">
-            <div class="modul-btn ${state.modul==='satis'?'active':''}" data-action="modul" data-modul="satis">Satış</div>
-            <div class="modul-btn ${state.modul==='uretim'?'active':''}" data-action="modul" data-modul="uretim">Üretim</div>
+            ${mods.map(m=>`<div class="modul-btn ${state.modul===m?'active':''}" data-action="modul" data-modul="${m}">${MODUL_ADLARI[m]||m}</div>`).join('')}
           </div>` : ''}
           <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>
           ${rol==='admin' ? `<button class="switch-btn" data-action="kullanicilar">Kullanıcılar</button>` : ''}
@@ -404,6 +469,11 @@
       case 'hat': return renderHatTab(rol);
       case 'uretim_takip': return renderUretimTakipTab(rol);
       case 'tutkal': return renderTutkalTab(rol);
+      case 'kantar': return renderKantarTab(rol);
+      case 'tomruk_sahasi': return renderTomrukSahasiTab(rol);
+      case 'soyma_ciktisi': return renderSoymaCiktisiTab(rol);
+      case 'uretim_planlama': return renderUretimPlanlamaTab(rol);
+      case 'receteler': return renderReceteTab(rol);
       default: return '';
     }
   }
@@ -864,6 +934,241 @@
     `;
   }
 
+  // ---------- Tedarik Zinciri: Kantar / Tomruk Sahası / Soyma Çıktısı / Üretim Planlama ----------
+
+  function bilinenTomrukKategorileri(){
+    return Array.from(new Set(state.kantarGirisleri.map(k=>k.olcu_kategori).filter(Boolean)));
+  }
+
+  function gunSayisi(kayitlar, gunAlani){
+    const gunler = new Set(kayitlar.map(r=>r[gunAlani]));
+    return gunler.size || 1;
+  }
+
+  function tomrukSahasiHesapla(){
+    const verimYuzde = ayar('soyma_verimi_yuzde', 55);
+    const kategoriler = bilinenTomrukKategorileri();
+    const sonuc = {};
+    const otuzGunOnce = new Date(); otuzGunOnce.setDate(otuzGunOnce.getDate()-30);
+    const otuzGunOnceStr = otuzGunOnce.toISOString().slice(0,10);
+
+    kategoriler.forEach(kat => {
+      const gelenler = state.kantarGirisleri.filter(k=>k.olcu_kategori===kat);
+      const gelenM3 = gelenler.reduce((s,k)=>s+(k.m3||0),0);
+      const soymalar = state.soymaCiktisi.filter(s=>s.tomruk_kategori===kat);
+      const tuketilenM3 = soymalar.reduce((s,r)=> s + ((r.m3||0) / (verimYuzde/100)), 0);
+      const kalanM3 = gelenM3 - tuketilenM3;
+      const sonDonemSoyma = soymalar.filter(r=>r.tarih >= otuzGunOnceStr);
+      const sonDonemTuketim = sonDonemSoyma.reduce((s,r)=> s + ((r.m3||0)/(verimYuzde/100)), 0);
+      const gunler = gunSayisi(sonDonemSoyma, 'tarih');
+      const gunlukOrt = sonDonemSoyma.length ? sonDonemTuketim/gunler : 0;
+      sonuc[kat] = { gelenM3, tuketilenM3, kalanM3, gunlukOrt, kacGun: gunlukOrt>0 ? kalanM3/gunlukOrt : null };
+    });
+    return sonuc;
+  }
+
+  function receteKatSayilari(kalinlik){
+    const r = state.kontraplakReceteleri[kalinlik];
+    if(!r) return null;
+    const sayim = {};
+    (r.dizilim||[]).forEach(k => { sayim[k] = (sayim[k]||0)+1; });
+    return sayim;
+  }
+
+  function papelUretilenHesapla(){
+    const sonuc = { '1.2': 0, '2.1': 0 };
+    state.soymaCiktisi.forEach(r => { sonuc[String(r.kalinlik)] = (sonuc[String(r.kalinlik)]||0) + (r.m3||0); });
+    return sonuc;
+  }
+
+  function papelTuketilenHesapla(kayitlar){
+    const sonuc = { '1.2': 0, '2.1': 0 };
+    (kayitlar||state.gunlukUretim).forEach(r => {
+      const sayim = receteKatSayilari(r.kalinlik);
+      if(!sayim) return;
+      const panelM2 = (parseFloat(r.en)||0)*(parseFloat(r.boy)||0)/10000; // cm -> m2
+      Object.entries(sayim).forEach(([kThickness, adetKat]) => {
+        const layerM3 = panelM2 * (parseFloat(kThickness)/1000) * (r.adet||0) * adetKat;
+        if(sonuc[kThickness]!=null) sonuc[kThickness] += layerM3;
+      });
+    });
+    return sonuc;
+  }
+
+  function papelStokuHesapla(){
+    const uretilen = papelUretilenHesapla();
+    const tuketilen = papelTuketilenHesapla();
+    return {
+      '1.2': { uretilen: uretilen['1.2'], tuketilen: tuketilen['1.2'], kalan: uretilen['1.2']-tuketilen['1.2'] },
+      '2.1': { uretilen: uretilen['2.1'], tuketilen: tuketilen['2.1'], kalan: uretilen['2.1']-tuketilen['2.1'] }
+    };
+  }
+
+  function papelIhtiyacHesapla(){
+    const bekleyenler = state.orders.filter(o=>o.status==='bekliyor');
+    const eksikRecete = new Set();
+    const ihtiyac = { '1.2': 0, '2.1': 0 };
+    bekleyenler.forEach(o => {
+      const sayim = receteKatSayilari(o.kalinlik);
+      if(!sayim){ eksikRecete.add(o.kalinlik); return; }
+      const panelM2 = (parseFloat(o.en)||0)*(parseFloat(o.boy)||0)/10000;
+      Object.entries(sayim).forEach(([kThickness, adetKat]) => {
+        const layerM3 = panelM2 * (parseFloat(kThickness)/1000) * (o.adet||0) * adetKat;
+        if(ihtiyac[kThickness]!=null) ihtiyac[kThickness] += layerM3;
+      });
+    });
+    return { ihtiyac, eksikRecete: Array.from(eksikRecete) };
+  }
+
+  function uretimPlanlamaHesapla(){
+    const stok = papelStokuHesapla();
+    const otuzGunOnce = new Date(); otuzGunOnce.setDate(otuzGunOnce.getDate()-30);
+    const otuzGunOnceStr = otuzGunOnce.toISOString().slice(0,10);
+    const sonDonemUretim = state.gunlukUretim.filter(r=>r.tarih>=otuzGunOnceStr);
+    const gunlukTuketim = papelTuketilenHesapla(sonDonemUretim);
+    const gunSayi = gunSayisi(sonDonemUretim,'tarih');
+    const { ihtiyac, eksikRecete } = papelIhtiyacHesapla();
+
+    const kacGun = {};
+    ['1.2','2.1'].forEach(k => {
+      const ortalama = sonDonemUretim.length ? gunlukTuketim[k]/gunSayi : 0;
+      kacGun[k] = ortalama>0 ? stok[k].kalan/ortalama : null;
+    });
+
+    let oneri = null;
+    if(kacGun['1.2']!=null && kacGun['2.1']!=null){
+      oneri = kacGun['1.2'] < kacGun['2.1'] ? '1.2' : '2.1';
+    }else if(kacGun['1.2']!=null){ oneri = '1.2'; }
+    else if(kacGun['2.1']!=null){ oneri = '2.1'; }
+
+    return { stok, ihtiyac, eksikRecete, kacGun, oneri };
+  }
+
+  function renderKantarTab(rol){
+    const kayitlar = state.kantarGirisleri.slice().sort((a,b)=> b.tarih.localeCompare(a.tarih));
+    return `
+      <div class="filters">
+        ${canEditKantar(rol) ? `<button class="row-btn primary" data-action="kantar-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+      </div>
+      ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz kantar kaydı girilmemiş.</div></div>` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Tarih</th><th>Tedarikçi</th><th>Plaka</th><th>Ölçü Kategorisi</th><th>Kilo</th><th>m³</th><th></th></tr></thead>
+          <tbody>${kayitlar.map(r=>`<tr>
+            <td>${fmtDate(r.tarih)}</td>
+            <td>${escapeHtml(r.tedarikci||'—')}</td>
+            <td>${escapeHtml(r.plaka||'—')}</td>
+            <td>${escapeHtml(r.olcu_kategori)}</td>
+            <td class="mono">${r.kilo}</td>
+            <td class="mono">${(r.m3||0).toFixed(3)}</td>
+            <td>${canEditKantar(rol) ? `<button class="row-btn" data-action="kantar-duzenle" data-id="${r.id}">Düzenle</button>` : ''}${rol==='admin'?` <button class="row-btn ghost" data-action="kantar-sil" data-id="${r.id}">Sil</button>`:''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`}
+    `;
+  }
+
+  function renderTomrukSahasiTab(rol){
+    const hesap = tomrukSahasiHesapla();
+    const kategoriler = Object.keys(hesap);
+    return `
+      <p class="hint" style="margin-bottom:14px;">Ağırlık→hacim dönüşüm oranı: <b>${ayar('kavak_yogunluk_kg_m3',730)} kg/m³</b> · Soyma verimi: <b>%${ayar('soyma_verimi_yuzde',55)}</b> ${rol==='admin' ? `<button class="row-btn" data-action="ayarlar-duzenle" style="margin-left:8px;">Ayarları Düzenle</button>` : ''}</p>
+      ${kategoriler.length===0 ? `<div class="card"><div class="empty"><b>Veri yok</b>Henüz kantar/soyma kaydı yok.</div></div>` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Ölçü Kategorisi</th><th>Gelen (m³)</th><th>Tüketilen (m³)</th><th>Kalan (m³)</th><th>Günlük Ort.</th><th>Kaç Gün Yeter</th></tr></thead>
+          <tbody>${kategoriler.map(kat=>{
+            const h = hesap[kat];
+            const kritik = h.kacGun!=null && h.kacGun < 3;
+            return `<tr ${kritik?'style="background:var(--red-bg);"':''}>
+              <td>${escapeHtml(kat)}</td>
+              <td class="mono">${h.gelenM3.toFixed(2)}</td>
+              <td class="mono">${h.tuketilenM3.toFixed(2)}</td>
+              <td class="mono">${h.kalanM3.toFixed(2)}</td>
+              <td class="mono">${h.gunlukOrt.toFixed(2)}</td>
+              <td class="mono" style="${kritik?'color:var(--red);font-weight:700;':''}">${h.kacGun!=null?h.kacGun.toFixed(1)+' gün':'—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`}
+    `;
+  }
+
+  function renderSoymaCiktisiTab(rol){
+    const kayitlar = state.soymaCiktisi.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
+    return `
+      <p class="hint" style="margin-bottom:14px;">Soyma verimi: <b>%${ayar('soyma_verimi_yuzde',55)}</b> ${rol==='admin' ? `<button class="row-btn" data-action="ayarlar-duzenle" style="margin-left:8px;">Ayarları Düzenle</button>` : ''}</p>
+      <div class="filters">
+        ${canEdit(rol) ? `<button class="row-btn primary" data-action="soyma-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+      </div>
+      ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz soyma çıktısı girilmemiş.</div></div>` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Tarih</th><th>Vardiya</th><th>Kalınlık</th><th>Palet</th><th>Adet/Palet</th><th>Ölçü</th><th>m³</th><th>Tomruk Kategorisi</th><th></th></tr></thead>
+          <tbody>${kayitlar.map(r=>`<tr>
+            <td>${fmtDate(r.tarih)}</td>
+            <td class="mono">${r.vardiya}</td>
+            <td class="mono">${r.kalinlik} mm</td>
+            <td class="mono">${r.palet_sayisi}</td>
+            <td class="mono">${r.adet_palet}</td>
+            <td class="mono">${r.en}×${r.boy}</td>
+            <td class="mono">${(r.m3||0).toFixed(3)}</td>
+            <td>${escapeHtml(r.tomruk_kategori||'—')}</td>
+            <td>${canEdit(rol) ? `<button class="row-btn" data-action="soyma-duzenle" data-id="${r.id}">Düzenle</button>` : ''}${rol==='admin'?` <button class="row-btn ghost" data-action="soyma-sil" data-id="${r.id}">Sil</button>`:''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`}
+    `;
+  }
+
+  function renderUretimPlanlamaTab(rol){
+    const p = uretimPlanlamaHesapla();
+    const KALINLIK_ADI = { '1.2':'1,2 mm', '2.1':'2,1 mm' };
+    return `
+      ${p.eksikRecete.length>0 ? `<div class="msg err">Şu kalınlıkların reçetesi tanımlı değil, hesaba katılamadı: ${p.eksikRecete.map(k=>k+' mm').join(', ')}</div>` : ''}
+      ${p.oneri ? `<div class="msg ok" style="font-size:16px;font-weight:700;">Bugünkü öneri: <b>${KALINLIK_ADI[p.oneri]} soy</b></div>` : `<div class="msg err">Öneri hesaplanamadı — yeterli geçmiş üretim verisi yok.</div>`}
+      <div class="summary">
+        ${['1.2','2.1'].map(k=>`
+          <div class="stat">
+            <div class="num">${p.stok[k].kalan.toFixed(2)}</div>
+            <div class="label">${KALINLIK_ADI[k]} Papel Stoğu (m³)</div>
+          </div>
+        `).join('')}
+        ${['1.2','2.1'].map(k=>`
+          <div class="stat">
+            <div class="num">${p.kacGun[k]!=null?p.kacGun[k].toFixed(1):'—'}</div>
+            <div class="label">${KALINLIK_ADI[k]} Kaç Gün Yeter</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="card" style="padding:16px;max-width:420px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Bekleyen Siparişlerden Papel İhtiyacı</h3>
+        <div class="meta-row"><span>1,2 mm ihtiyaç</span><b>${p.ihtiyac['1.2'].toFixed(2)} m³</b></div>
+        <div class="meta-row"><span>2,1 mm ihtiyaç</span><b>${p.ihtiyac['2.1'].toFixed(2)} m³</b></div>
+      </div>
+    `;
+  }
+
+  function renderReceteTab(rol){
+    const receteler = Object.values(state.kontraplakReceteleri).sort((a,b)=>a.kalinlik-b.kalinlik);
+    return `
+      <div class="filters">
+        ${rol==='admin' ? `<button class="row-btn primary" data-action="recete-ekle" style="margin-left:auto;">+ Yeni Reçete</button>` : ''}
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>Kalınlık</th><th>Kat Sayısı</th><th>Dizilim</th><th></th></tr></thead>
+          <tbody>${receteler.map(r=>`<tr>
+            <td class="mono">${r.kalinlik} mm</td>
+            <td class="mono">${r.kat_sayisi}</td>
+            <td class="mono">${(r.dizilim||[]).join(' + ')}</td>
+            <td>${rol==='admin' ? `<button class="row-btn" data-action="recete-duzenle" data-kalinlik="${r.kalinlik}">Düzenle</button>` : ''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
   function renderModal(rol){
     const m = state.modal;
     if(m.type==='edit'){
@@ -1078,6 +1383,101 @@
         </div>
       </div></div>`;
     }
+    if(m.type==='kantar-kaydi'){
+      const r = m.kayit || {};
+      const isEdit = !!m.kayit;
+      const kategoriler = bilinenTomrukKategorileri();
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>${isEdit?'Kantar Kaydını Düzenle':'Yeni Kantar Kaydı'}</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="kantar-kaydi-form">
+            <div class="form-grid">
+              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
+              <div class="field"><label>Kilo</label><input type="number" step="any" min="0" name="kilo" required value="${r.kilo||''}"></div>
+              <div class="field"><label>Tedarikçi</label><input type="text" name="tedarikci" value="${escapeHtml(r.tedarikci||'')}"></div>
+              <div class="field"><label>Plaka</label><input type="text" name="plaka" value="${escapeHtml(r.plaka||'')}"></div>
+              <div class="field full"><label>Ölçü Kategorisi</label><input list="kategori-list" type="text" name="olcu_kategori" required value="${escapeHtml(r.olcu_kategori||'')}" placeholder="ör. 180x230"><datalist id="kategori-list">${kategoriler.map(k=>`<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
+              <div class="field readout full"><label>m³ (otomatik, ${ayar('kavak_yogunluk_kg_m3',730)} kg/m³ ile)</label><input type="text" id="kantar-m3-readout" readonly value="${r.kilo?(r.kilo/ayar('kavak_yogunluk_kg_m3',730)).toFixed(3):'0.000'}"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='soyma-kaydi'){
+      const r = m.kayit || {};
+      const isEdit = !!m.kayit;
+      const kategoriler = bilinenTomrukKategorileri();
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>${isEdit?'Soyma Kaydını Düzenle':'Yeni Soyma Çıktısı'}</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="soyma-kaydi-form">
+            <div class="form-grid">
+              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
+              <div class="field"><label>Vardiya</label><select name="vardiya">
+                <option value="1" ${r.vardiya===1?'selected':''}>1</option>
+                <option value="2" ${r.vardiya===2?'selected':''}>2</option>
+                <option value="3" ${r.vardiya===3?'selected':''}>3</option>
+              </select></div>
+              <div class="field"><label>Kalınlık</label><select name="kalinlik" id="soyma-kalinlik-select">
+                <option value="1.2" ${r.kalinlik==1.2?'selected':''}>1,2 mm</option>
+                <option value="2.1" ${r.kalinlik==2.1?'selected':''}>2,1 mm</option>
+              </select></div>
+              <div class="field"><label>Palet Sayısı</label><input type="number" step="any" min="0" name="palet_sayisi" id="soyma-palet-sayisi" required value="${r.palet_sayisi||1}"></div>
+              <div class="field"><label>Adet / Palet</label><input type="number" step="any" min="0" name="adet_palet" id="soyma-adet-palet" required value="${r.adet_palet||(r.kalinlik==2.1?400:700)}"></div>
+              <div class="field"><label>En (cm)</label><input type="number" step="any" min="0" name="en" id="soyma-en" required value="${r.en||230}"></div>
+              <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" id="soyma-boy" required value="${r.boy||180}"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="soyma-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+              <div class="field full"><label>Tomruk Kategorisi (hangi stoktan düşülsün)</label><input list="soyma-kategori-list" type="text" name="tomruk_kategori" required value="${escapeHtml(r.tomruk_kategori||'')}" placeholder="ör. 180x230"><datalist id="soyma-kategori-list">${kategoriler.map(k=>`<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='recete-kaydi'){
+      const r = m.kayit || {};
+      const isEdit = !!m.kayit;
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>${isEdit?'Reçeteyi Düzenle':'Yeni Reçete'}</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="recete-kaydi-form">
+            <div class="form-grid">
+              <div class="field full"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${r.kalinlik||''}" ${isEdit?'readonly':''}></div>
+              <div class="field full"><label>Dizilim (virgülle ayır, ör: 1.2, 2.1, 2.1, 2.1, 2.1, 2.1, 1.2)</label><textarea name="dizilim" rows="3" required>${(r.dizilim||[]).join(', ')}</textarea>
+              <div class="hint">Kat sayısı otomatik hesaplanır, tek sayı olmalı.</div></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='ayarlar'){
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>Ayarları Düzenle</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="ayarlar-form">
+            <div class="form-grid">
+              <div class="field full"><label>Kavak Yoğunluğu (kg/m³)</label><input type="number" step="any" min="0" name="kavak_yogunluk_kg_m3" required value="${ayar('kavak_yogunluk_kg_m3',730)}"></div>
+              <div class="field full"><label>Soyma Verimi (%)</label><input type="number" step="any" min="0" max="100" name="soyma_verimi_yuzde" required value="${ayar('soyma_verimi_yuzde',55)}"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Kaydet</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
     return '';
   }
 
@@ -1116,6 +1516,13 @@
     else if(action==='modul'){
       state.modul = t.dataset.modul; state.activeTab = defaultTab(state.modul); state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
+      if(state.activeTab==='kantar'){
+        if(!state.kantarLoaded) loadKantar(true);
+        if(!state.soymaLoaded) loadSoyma(true);
+        if(!state.receteLoaded) loadReceteler(true);
+        if(!state.ayarlarLoaded) loadAyarlar(true);
+        if(!state.gunlukUretimLoaded) loadGunlukUretim(true);
+      }
       render();
     }
     else if(action==='refresh'){ loadOrders(); }
@@ -1124,6 +1531,13 @@
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
       if(state.activeTab==='tutkal' && !state.tutkalLoaded){ loadTutkal(); }
       if(state.activeTab==='tutkal' && !state.gunlukUretimLoaded){ loadGunlukUretim(true); }
+      if(['kantar','tomruk_sahasi','soyma_ciktisi','uretim_planlama','receteler'].includes(state.activeTab)){
+        if(!state.kantarLoaded) loadKantar(true);
+        if(!state.soymaLoaded) loadSoyma(true);
+        if(!state.receteLoaded) loadReceteler(true);
+        if(!state.ayarlarLoaded) loadAyarlar(true);
+        if(!state.gunlukUretimLoaded) loadGunlukUretim(true);
+      }
       render();
     }
     else if(action==='filter'){ state.filterStatus = t.dataset.status; render(); }
@@ -1161,6 +1575,29 @@
         });
       }
     }
+    else if(action==='kantar-ekle'){ state.modal = { type:'kantar-kaydi', kayit:null }; render(); }
+    else if(action==='kantar-duzenle'){ const r = state.kantarGirisleri.find(x=>x.id===t.dataset.id); state.modal = { type:'kantar-kaydi', kayit:r }; render(); }
+    else if(action==='kantar-sil'){
+      if(confirm('Bu kantar kaydını kalıcı olarak silmek istediğine emin misin?')){
+        sb.from('kantar_girisleri').delete().eq('id', t.dataset.id).then(({error})=>{
+          state.toast = error ? {type:'err', text:'Silinemedi: '+error.message} : {type:'ok', text:'Kantar kaydı silindi.'};
+          loadKantar(true);
+        });
+      }
+    }
+    else if(action==='soyma-ekle'){ state.modal = { type:'soyma-kaydi', kayit:null }; render(); }
+    else if(action==='soyma-duzenle'){ const r = state.soymaCiktisi.find(x=>x.id===t.dataset.id); state.modal = { type:'soyma-kaydi', kayit:r }; render(); }
+    else if(action==='soyma-sil'){
+      if(confirm('Bu soyma kaydını kalıcı olarak silmek istediğine emin misin?')){
+        sb.from('soyma_ciktisi').delete().eq('id', t.dataset.id).then(({error})=>{
+          state.toast = error ? {type:'err', text:'Silinemedi: '+error.message} : {type:'ok', text:'Soyma kaydı silindi.'};
+          loadSoyma(true);
+        });
+      }
+    }
+    else if(action==='recete-ekle'){ state.modal = { type:'recete-kaydi', kayit:null }; render(); }
+    else if(action==='recete-duzenle'){ const r = state.kontraplakReceteleri[t.dataset.kalinlik]; state.modal = { type:'recete-kaydi', kayit:r }; render(); }
+    else if(action==='ayarlar-duzenle'){ state.modal = { type:'ayarlar' }; render(); }
     else if(action==='close-modal' || action==='cancel-edit'){ state.modal=null; render(); }
   });
 
@@ -1201,9 +1638,32 @@
     if(e.target.matches('[data-action="ozet-ay"]')){
       state.ozetAy = e.target.value; render();
     }
+    if(e.target.closest('#kantar-kaydi-form')){
+      const form = e.target.closest('#kantar-kaydi-form');
+      const readout = document.getElementById('kantar-m3-readout');
+      if(readout) readout.value = (parseFloat(form.kilo.value||0) / ayar('kavak_yogunluk_kg_m3',730)).toFixed(3);
+    }
+    if(e.target.closest('#soyma-kaydi-form')){
+      const form = e.target.closest('#soyma-kaydi-form');
+      const readout = document.getElementById('soyma-m3-readout');
+      const palet = parseFloat(form.palet_sayisi.value||0);
+      const adetPalet = parseFloat(form.adet_palet.value||0);
+      const en = parseFloat(form.en.value||0);
+      const boy = parseFloat(form.boy.value||0);
+      const kalinlik = parseFloat(form.kalinlik.value||0);
+      const toplamAdet = palet*adetPalet;
+      const m3 = (en*boy*kalinlik*toplamAdet)/10000000;
+      if(readout) readout.value = m3.toFixed(3);
+    }
   });
 
   app.addEventListener('change', async function(e){
+    if(e.target.matches('#soyma-kalinlik-select')){
+      const form = e.target.closest('#soyma-kaydi-form');
+      form.adet_palet.value = e.target.value==='1.2' ? 700 : 400;
+      const ev = new Event('input', {bubbles:true});
+      form.adet_palet.dispatchEvent(ev);
+    }
     if(e.target.matches('[data-action="update-stage"]')){
       const id = e.target.dataset.id;
       const { error } = await sb.from('siparisler').update({ asama: e.target.value }).eq('id', id);
@@ -1362,6 +1822,85 @@
       const sonuc = await adminSifreAta(hedefId, f.yeni.value);
       state.toast = sonuc.error ? {type:'err', text:sonuc.error} : {type:'ok', text:'Şifre atandı.'};
       state.modal = null;
+      render();
+    }
+
+    else if(e.target.id==='kantar-kaydi-form'){
+      const f = e.target;
+      const kilo = parseFloat(f.kilo.value);
+      const data = {
+        tarih: f.tarih.value,
+        kilo,
+        m3: Math.round((kilo/ayar('kavak_yogunluk_kg_m3',730))*1000)/1000,
+        tedarikci: f.tedarikci.value.trim() || null,
+        plaka: f.plaka.value.trim() || null,
+        olcu_kategori: f.olcu_kategori.value.trim()
+      };
+      let error;
+      if(state.modal.kayit){
+        ({ error } = await sb.from('kantar_girisleri').update(data).eq('id', state.modal.kayit.id));
+      }else{
+        ({ error } = await sb.from('kantar_girisleri').insert([Object.assign({}, data, { created_by: state.user.id })]));
+      }
+      state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Kantar kaydı kaydedildi.'};
+      state.modal = null;
+      await loadKantar(true);
+    }
+
+    else if(e.target.id==='soyma-kaydi-form'){
+      const f = e.target;
+      const palet = parseFloat(f.palet_sayisi.value);
+      const adetPalet = parseFloat(f.adet_palet.value);
+      const en = parseFloat(f.en.value);
+      const boy = parseFloat(f.boy.value);
+      const kalinlik = parseFloat(f.kalinlik.value);
+      const toplamAdet = palet*adetPalet;
+      const data = {
+        tarih: f.tarih.value,
+        vardiya: parseInt(f.vardiya.value,10),
+        kalinlik, palet_sayisi: palet, adet_palet: adetPalet, en, boy,
+        m3: Math.round(((en*boy*kalinlik*toplamAdet)/10000000)*1000)/1000,
+        tomruk_kategori: f.tomruk_kategori.value.trim()
+      };
+      let error;
+      if(state.modal.kayit){
+        ({ error } = await sb.from('soyma_ciktisi').update(Object.assign({}, data, { updated_at:new Date().toISOString() })).eq('id', state.modal.kayit.id));
+      }else{
+        ({ error } = await sb.from('soyma_ciktisi').insert([Object.assign({}, data, { created_by: state.user.id })]));
+      }
+      state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Soyma kaydı kaydedildi.'};
+      state.modal = null;
+      await loadSoyma(true);
+    }
+
+    else if(e.target.id==='recete-kaydi-form'){
+      const f = e.target;
+      const kalinlik = parseFloat(f.kalinlik.value);
+      const dizilim = f.dizilim.value.split(',').map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+      const { error } = await sb.from('kontraplak_receteleri').upsert({
+        kalinlik, kat_sayisi: dizilim.length, dizilim,
+        updated_at: new Date().toISOString(), updated_by: state.user.id
+      }, { onConflict: 'kalinlik' });
+      state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Reçete kaydedildi.'};
+      state.modal = null;
+      await loadReceteler(true);
+      render();
+    }
+
+    else if(e.target.id==='ayarlar-form'){
+      const f = e.target;
+      const guncellemeler = [
+        { anahtar:'kavak_yogunluk_kg_m3', deger: parseFloat(f.kavak_yogunluk_kg_m3.value) },
+        { anahtar:'soyma_verimi_yuzde', deger: parseFloat(f.soyma_verimi_yuzde.value) }
+      ];
+      let hata = null;
+      for(const g of guncellemeler){
+        const { error } = await sb.from('sistem_ayarlari').update({ deger: g.deger, updated_at:new Date().toISOString(), updated_by: state.user.id }).eq('anahtar', g.anahtar);
+        if(error) hata = error;
+      }
+      state.toast = hata ? {type:'err', text:'Kaydedilemedi: '+hata.message} : {type:'ok', text:'Ayarlar güncellendi.'};
+      state.modal = null;
+      await loadAyarlar(true);
       render();
     }
   });
