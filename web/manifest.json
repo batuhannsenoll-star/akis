@@ -1,7 +1,7 @@
 {
-  "name": "Anıl Orman Ürünleri — Sipariş Takip",
-  "short_name": "Anıl Sipariş Takip",
-  "description": "Anıl Orman Ürünleri sipariş ve üretim takip uygulaması",
+  "name": "Anıl Orman Ürünleri — Akış",
+  "short_name": "Akış",
+  "description": "Anıl Orman Ürünleri sipariş ve üretim takip uygulaması (Akış)",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

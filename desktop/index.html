@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anıl Orman Ürünleri — Sipariş Takip</title>
+<title>Anıl Orman Ürünleri — Akış</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -437,7 +437,7 @@
     app.innerHTML = `
       <div class="veneer"></div>
       <header>
-        <div class="brand"><img src="icons/anil-logo.png" alt="Anıl Orman Ürünleri" class="brand-logo"><h1>Sipariş Takip</h1></div>
+        <div class="brand"><img src="icons/anil-logo.png" alt="Anıl Orman Ürünleri" class="brand-logo"><h1>Akış</h1></div>
         <div class="role-chip">
           ${mods.length>1 ? `
           <div class="modul-switch">
@@ -456,7 +456,7 @@
         ${state.toast ? `<div class="msg ${state.toast.type==='ok'?'ok':'err'}">${escapeHtml(state.toast.text)}</div>` : ''}
         ${state.loading ? `<div class="loading">Yükleniyor…</div>` : renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list)}
       </main>
-      <div class="app-footer">Akış altyapısı ile çalışır</div>
+      <div class="app-footer">Anıl Orman Ürünleri için geliştirildi</div>
       ${state.modal ? renderModal(rol) : ''}
     `;
   }
@@ -1487,7 +1487,7 @@
       <div class="veneer"></div>
       <div class="gate">
         <img src="icons/anil-logo.png" alt="Anıl Orman Ürünleri" style="width:100px;height:100px;border-radius:18px;margin-bottom:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
-        <div class="gate-title">Sipariş Takip</div>
+        <div class="gate-title">Akış</div>
         <div class="gate-sub">Satışçılar sipariş girer, üretim tamamlandığında burada güncellenir ve otomatik arşivlenir.</div>
         <div class="auth-card">
           <form id="auth-form">
@@ -1499,7 +1499,6 @@
           ${state.authOk ? `<div class="auth-ok">${escapeHtml(state.authOk)}</div>` : ''}
           <div class="auth-hint" style="margin-top:14px;text-align:center;">Hesabın yok mu? Yöneticinden (Batuhan) e-posta ve şifre iste.</div>
         </div>
-        <div class="powered-by">Akış altyapısı ile çalışır</div>
       </div>
     `;
   }

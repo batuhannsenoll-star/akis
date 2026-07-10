@@ -8,7 +8,7 @@ function createWindow () {
     height: 860,
     minWidth: 900,
     minHeight: 600,
-    title: 'Anıl Orman Ürünleri — Sipariş Takip',
+    title: 'Anıl Orman Ürünleri — Akış',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     backgroundColor: '#3B5B58',
     webPreferences: {
@@ -36,7 +36,7 @@ autoUpdater.on('update-downloaded', () => {
   dialog.showMessageBox({
     type: 'info',
     title: 'Güncelleme Hazır',
-    message: 'Sipariş Takip uygulamasının yeni bir sürümü indirildi. Şimdi yeniden başlatılsın mı?',
+    message: 'Akış uygulamasının yeni bir sürümü indirildi. Şimdi yeniden başlatılsın mı?',
     buttons: ['Şimdi Yeniden Başlat', 'Daha Sonra']
   }).then((result) => {
     if (result.response === 0) autoUpdater.quitAndInstall();
