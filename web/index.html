@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <style>
   :root{
     --shell:#1E2124;
@@ -153,8 +154,12 @@
 <script>
 (function(){
   // ---- Supabase bağlantısı ----
-  const SUPABASE_URL = "https://jsjqyoibvdoqhvijhmwh.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzanF5b2lidmRvcWh2aWpobXdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NjY5MzQsImV4cCI6MjA5ODQ0MjkzNH0.TgSbpElM7N1qoEB145u7_4yTxcsUe0eupiRe9Vxp7Bw";
+  const CONFIG = window.AKIS_CONFIG || {};
+  const SUPABASE_URL = CONFIG.supabaseUrl;
+  const SUPABASE_ANON_KEY = CONFIG.supabaseAnonKey;
+  const FIRMA_ADI = CONFIG.firmaAdi || "Akış";
+  const FIRMA_LOGO = CONFIG.firmaLogo || "";
+  const AKTIF_MODULLER = CONFIG.aktifModuller || ["satis","uretim","tedarik"];
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const CINS_OPTIONS = ["Kavak/Kavak", "Kavak/Huş", "Kayın/Kayın"];
@@ -216,11 +221,12 @@
   }
 
   function moduller(rol){
-    if(rol==='satis') return ['satis'];
-    if(rol==='vardiya_amiri') return ['uretim','tedarik'];
-    if(rol==='satin_alma') return ['tedarik'];
-    if(rol==='admin' || rol==='patron') return ['satis','uretim','tedarik'];
-    return [];
+    let mods = [];
+    if(rol==='satis') mods = ['satis'];
+    else if(rol==='vardiya_amiri') mods = ['uretim','tedarik'];
+    else if(rol==='satin_alma') mods = ['tedarik'];
+    else if(rol==='admin' || rol==='patron') mods = ['satis','uretim','tedarik'];
+    return mods.filter(m => AKTIF_MODULLER.includes(m));
   }
   function defaultTab(modul){
     if(modul==='satis') return 'takip';
@@ -445,7 +451,7 @@
     app.innerHTML = `
       <div class="veneer"></div>
       <header>
-        <div class="brand"><img src="icons/anil-logo.png" alt="Anıl Orman Ürünleri" class="brand-logo"><h1>Akış</h1></div>
+        <div class="brand"><img src="${FIRMA_LOGO}" alt="${escapeHtml(FIRMA_ADI)}" class="brand-logo"><h1>Akış</h1></div>
         <div class="role-chip">
           ${mods.length>1 ? `
           <div class="modul-switch">
@@ -464,7 +470,7 @@
         ${state.toast ? `<div class="msg ${state.toast.type==='ok'?'ok':'err'}">${escapeHtml(state.toast.text)}</div>` : ''}
         ${state.loading ? `<div class="loading">Yükleniyor…</div>` : renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list)}
       </main>
-      <div class="app-footer">Anıl Orman Ürünleri için geliştirildi</div>
+      <div class="app-footer">${escapeHtml(FIRMA_ADI)} için geliştirildi</div>
       ${state.modal ? renderModal(rol) : ''}
     `;
   }
@@ -1494,7 +1500,7 @@
     app.innerHTML = `
       <div class="veneer"></div>
       <div class="gate">
-        <img src="icons/anil-logo.png" alt="Anıl Orman Ürünleri" style="width:100px;height:100px;border-radius:18px;margin-bottom:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+        <img src="${FIRMA_LOGO}" alt="${escapeHtml(FIRMA_ADI)}" style="width:100px;height:100px;border-radius:18px;margin-bottom:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
         <div class="gate-title">Akış</div>
         <div class="gate-sub">Satışçılar sipariş girer, üretim tamamlandığında burada güncellenir ve otomatik arşivlenir.</div>
         <div class="auth-card">
@@ -1912,6 +1918,7 @@
     }
   });
 
+  document.title = FIRMA_ADI + " — Akış";
   init();
 })();
 

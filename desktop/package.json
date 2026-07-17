@@ -1,7 +1,7 @@
 {
-  "name": "siparis-takip",
-  "version": "1.0.9",
-  "description": "Anıl Orman Ürünleri - Sipariş Takip Masaüstü Uygulaması",
+  "name": "akis",
+  "version": "1.1.0",
+  "description": "Anıl Orman Ürünleri - Akış Masaüstü Uygulaması",
   "main": "main.js",
   "author": "Batuhan",
   "scripts": {
@@ -17,8 +17,8 @@
     "electron-updater": "^6.3.4"
   },
   "build": {
-    "appId": "com.kontraplak.siparistakip",
-    "productName": "Siparis Takip",
+    "appId": "com.kontraplak.akis",
+    "productName": "Akış",
     "icon": "build/icon.ico",
     "files": [
       "main.js",
@@ -42,7 +42,7 @@
     "publish": {
       "provider": "github",
       "owner": "batuhannsenoll-star",
-      "repo": "siparis-takip",
+      "repo": "akis",
       "releaseType": "release"
     }
   }

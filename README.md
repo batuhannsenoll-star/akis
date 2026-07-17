@@ -1,4 +1,4 @@
-# Sipariş Takip — GitHub ile Otomatik Güncelleme Kurulumu
+# Akış — GitHub ile Otomatik Güncelleme Kurulumu
 
 Bu depo iki klasör içerir:
 - `web/`   → Netlify'a bağlanacak, web + telefon (PWA) sürümü
@@ -12,10 +12,10 @@ Kod her güncellendiğinde: `web/` klasöründeki değişiklik Netlify'a otomati
 
 1. **https://github.com/signup** adresine git, ücretsiz bir hesap oluştur (e-posta, kullanıcı adı, şifre).
 2. Giriş yaptıktan sonra sağ üstteki **+** işaretine tıkla → **"New repository"**.
-3. **Repository name:** `siparis-takip` yaz.
+3. **Repository name:** `akis` yaz.
 4. **Private** seçeneğini işaretle (dış dünyaya kapalı olsun, sadece sen ve eklediğin kişiler görsün).
 5. Diğer seçenekleri (README ekle vb.) **boş bırak**, direkt **"Create repository"**ye bas.
-6. Açılan sayfada bir adres göreceksin, şuna benzer: `https://github.com/KULLANICI_ADIN/siparis-takip.git` — bu adresi not al, birazdan lazım olacak.
+6. Açılan sayfada bir adres göreceksin, şuna benzer: `https://github.com/KULLANICI_ADIN/akis.git` — bu adresi not al, birazdan lazım olacak.
 
 ## BÖLÜM 2 — GitHub Desktop kurma (kod yükleme için en kolay yol)
 
@@ -24,10 +24,10 @@ Komut satırıyla uğraşmamak için görsel bir araç kullanacağız:
 1. **https://desktop.github.com** adresinden **GitHub Desktop**'ı indir, kur.
 2. Açtığında GitHub hesabınla giriş yap.
 3. Üst menüden **File → Add local repository**.
-4. Bu zip'i çıkardığın klasörü (içinde `web`, `desktop`, `.gitignore` olan ana klasör — `siparis-takip-repo`) seç.
+4. Bu zip'i çıkardığın klasörü (içinde `web`, `desktop`, `.gitignore` olan ana klasör — `akis-repo`) seç.
 5. "This directory does not appear to be a Git repository" gibi bir uyarı çıkarsa, altındaki **"create a repository"** linkine tıkla, onayla.
 6. Sol altta bir **"Publish repository"** butonu göreceksin — ona tıkla.
-7. Açılan pencerede **"Keep this code private"** işaretli olsun, **isim alanına `siparis-takip` yaz** (Bölüm 1'de oluşturduğun depoyla aynı isim), **"Publish Repository"**ye bas.
+7. Açılan pencerede **"Keep this code private"** işaretli olsun, **isim alanına `akis` yaz** (Bölüm 1'de oluşturduğun depoyla aynı isim), **"Publish Repository"**ye bas.
 
 Kodun artık GitHub'da. Bundan sonra her değişiklikte:
 1. Dosyalar güncellenince GitHub Desktop'ı aç, değişen dosyaları göreceksin.
@@ -41,7 +41,7 @@ Bu kadar — kod GitHub'a gitti.
 1. Netlify'da projenin sayfasına git (`gleeful-wisp-898937`).
 2. Sol menüden **Project configuration** → **Build & deploy** (veya "Continuous deployment") sekmesine gir.
 3. **"Link repository"** / **"Link site to Git"** gibi bir buton bulacaksın, ona tıkla.
-4. GitHub ile bağlan (izin ver), listeden **`siparis-takip`** deposunu seç.
+4. GitHub ile bağlan (izin ver), listeden **`akis`** deposunu seç.
 5. Build ayarlarında:
    - **Base directory:** `web`
    - **Publish directory:** `web`
@@ -58,7 +58,7 @@ Bu kısım biraz daha teknik ama tek seferlik kurulum:
 1. GitHub'da sağ üstteki profil resmine tıkla → **Settings**.
 2. Sol altta **Developer settings** → **Personal access tokens** → **Tokens (classic)**.
 3. **Generate new token (classic)**.
-4. İsim ver (ör. "siparis-takip-yayinlama"), süre olarak "No expiration" ya da uzun bir süre seç.
+4. İsim ver (ör. "akis-yayinlama"), süre olarak "No expiration" ya da uzun bir süre seç.
 5. Yetkilerden sadece **`repo`** kutusunu işaretle.
 6. **Generate token** — sana `ghp_...` ile başlayan bir kod verecek. **Bunu bir kenara not et, bir daha gösterilmeyecek.** (Bu kodu benimle veya başka biriyle paylaşma, sadece kendi bilgisayarında kullanacaksın.)
 
