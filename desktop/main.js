@@ -1,25 +1,37 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
 function createWindow () {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 900,
-    minHeight: 600,
-    title: 'Anıl Orman Ürünleri — Akış',
+    width: 480,
+    height: 700,
+    minWidth: 420,
+    minHeight: 640,
+    resizable: true,
+    title: 'Akış',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     backgroundColor: '#3B5B58',
     webPreferences: {
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js')
     }
   });
 
   win.setMenuBarVisibility(false); // üst menü çubuğunu (Dosya/Düzen/...) gizler, sade görünüm
   win.loadFile('index.html');
+  return win;
 }
+
+// Giriş başarılı olunca renderer bu mesajı gönderir, pencereyi ana uygulama boyutuna büyütürüz.
+ipcMain.on('resize-main-window', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  win.setMinimumSize(900, 600);
+  win.setSize(1280, 860);
+  win.center();
+});
 
 app.whenReady().then(() => {
   createWindow();

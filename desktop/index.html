@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anıl Orman Ürünleri — Akış</title>
+<title>Akış</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -428,6 +428,10 @@
   // ---------- Render ----------
   function render(){
     if(!state.user){ renderGate(); return; }
+    if(window.electronAPI && !state.__windowResized){
+      state.__windowResized = true;
+      window.electronAPI.resizeToMain();
+    }
     const rol = state.profile ? state.profile.rol : null;
     const mods = moduller(rol);
     if(!mods.includes(state.modul)) state.modul = mods[0];
@@ -1494,16 +1498,14 @@
       <div class="gate">
         <img src="${FIRMA_LOGO}" alt="${escapeHtml(FIRMA_ADI)}" style="width:100px;height:100px;border-radius:18px;margin-bottom:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
         <div class="gate-title">Akış</div>
-        <div class="gate-sub">Satışçılar sipariş girer, üretim tamamlandığında burada güncellenir ve otomatik arşivlenir.</div>
         <div class="auth-card">
           <form id="auth-form">
-            <div class="auth-field"><label>Kullanıcı Adı (Ad Soyad)</label><input type="text" name="ad_soyad" required autocomplete="username"></div>
+            <div class="auth-field"><label>Kullanıcı Adı</label><input type="text" name="ad_soyad" required autocomplete="username"></div>
             <div class="auth-field"><label>Şifre</label><input type="password" name="password" required minlength="6"></div>
             <button type="submit" class="auth-submit" ${state.authBusy?'disabled':''}>${state.authBusy ? 'Lütfen bekleyin…' : 'Giriş Yap'}</button>
           </form>
           <div class="auth-error">${escapeHtml(state.authError)}</div>
           ${state.authOk ? `<div class="auth-ok">${escapeHtml(state.authOk)}</div>` : ''}
-          <div class="auth-hint" style="margin-top:14px;text-align:center;">Hesabın yok mu? Yöneticinden (Batuhan) e-posta ve şifre iste.</div>
         </div>
       </div>
     `;
@@ -1910,7 +1912,7 @@
     }
   });
 
-  document.title = FIRMA_ADI + " — Akış";
+  document.title = "Akış";
   init();
 })();
 

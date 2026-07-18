@@ -9,7 +9,7 @@ window.AKIS_CONFIG = {
 
   // --- Firma bilgileri (ekranlarda görünür) ---
   firmaAdi: "Anıl Orman Ürünleri",
-  firmaLogo: "icons/anil-logo.png",
+  firmaLogo: "icons/akis-logo.png",
 
   // --- Bu firmada hangi modüller aktif? ---
   // Olası değerler: "satis", "uretim", "tedarik"
