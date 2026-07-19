@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{
@@ -198,6 +199,7 @@
     presUretim: [], presLoaded: false,
     cncIslem: [], cncLoaded: false,
     zimparaFitil: [], zimparaLoaded: false,
+    cizimler: [], cizimlerLoaded: false, cizimYukleniyor: false, cizimSearch: '',
     ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
     loading: true,
     modal: null,
@@ -461,6 +463,141 @@
     render();
   }
 
+  async function loadCizimler(silent){
+    if(!silent){ state.loading = true; render(); }
+    const { data, error } = await sb.from('mobilya_cizimler').select('*').order('created_at', { ascending:false });
+    if(!error) state.cizimler = data || [];
+    state.cizimlerLoaded = true;
+    state.loading = false;
+    render();
+  }
+
+  function dosyaBoyutuMetin(bayt){
+    if(bayt==null) return '—';
+    if(bayt < 1024) return bayt + ' B';
+    if(bayt < 1024*1024) return (bayt/1024).toFixed(1) + ' KB';
+    return (bayt/(1024*1024)).toFixed(1) + ' MB';
+  }
+
+  async function cizimYukle(file, kategori, aciklama){
+    state.cizimYukleniyor = true; render();
+    const guvenliAd = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const yol = `${new Date().toISOString().slice(0,7)}/${crypto.randomUUID()}_${guvenliAd}`;
+    const { error: uploadError } = await sb.storage.from('cizimler').upload(yol, file);
+    if(uploadError){
+      state.cizimYukleniyor = false;
+      state.toast = {type:'err', text:'Yüklenemedi: '+uploadError.message};
+      render();
+      return;
+    }
+    const { error: dbError } = await sb.from('mobilya_cizimler').insert([{
+      dosya_adi: file.name,
+      kategori: kategori || null,
+      aciklama: aciklama || null,
+      dosya_yolu: yol,
+      dosya_boyutu: file.size,
+      created_by: state.user.id
+    }]);
+    state.cizimYukleniyor = false;
+    if(dbError){
+      state.toast = {type:'err', text:'Kaydedilemedi: '+dbError.message};
+    }else{
+      state.toast = {type:'ok', text:'Çizim yüklendi: '+file.name};
+      state.modal = null;
+    }
+    await loadCizimler(true);
+  }
+
+  async function cizimIndir(dosyaYolu, dosyaAdi){
+    const { data, error } = await sb.storage.from('cizimler').createSignedUrl(dosyaYolu, 60);
+    if(error){
+      state.toast = {type:'err', text:'İndirilemedi: '+error.message};
+      render();
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = data.signedUrl;
+    a.download = dosyaAdi;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function cizimSil(id, dosyaYolu){
+    const { error: storageError } = await sb.storage.from('cizimler').remove([dosyaYolu]);
+    const { error: dbError } = await sb.from('mobilya_cizimler').delete().eq('id', id);
+    state.toast = (storageError || dbError) ? {type:'err', text:'Silinemedi: '+((dbError||storageError).message)} : {type:'ok', text:'Çizim silindi.'};
+    await loadCizimler(true);
+  }
+
+  function exportToExcel(filename, header, rows){
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Veri');
+    XLSX.writeFile(wb, filename + '_' + todayStr() + '.xlsx');
+  }
+
+  function excelExportData(key){
+    let header, rows, filename;
+    if(key==='siparisler'){
+      filename = 'siparis_takip';
+      header = ['No','Sipariş Tarihi','Termin Tarihi','Cins','En','Boy','Kalınlık','Adet','m³','Sorumlu','Aşama','Durum'];
+      rows = sortedFilteredOrders().map(o => [o.no, o.siparis_tarihi, o.termin_tarihi, o.cins, o.en, o.boy, o.kalinlik, o.adet, o.m3||0, sorumluAdi(o.sorumlu_id), o.asama||'', o.status==='bekliyor'?'Bekliyor':'Üretildi']);
+    } else if(key==='gunluk_uretim'){
+      filename = 'uretim_gunluk_kayitlar';
+      header = ['Tarih','Vardiya','Usta','Makine','Cins','Boy','En','Kalınlık','Adet','Fire','m³'];
+      rows = state.gunlukUretim.map(r => [r.tarih, r.vardiya, r.usta||'', r.makine, r.cins, r.boy, r.en, r.kalinlik, r.adet, r.fire_adet||0, r.m3||0]);
+    } else if(key==='tutkal'){
+      filename = 'tutkal_takip';
+      header = ['Tarih','Vardiya','Alt','Üst','Soğuk','K.U.','K.K.','İ.B.','M.G.','Eklenen','Harcanan','Kalan'];
+      rows = state.tutkal.map(r => [r.tarih, r.vardiya, r.alt, r.ust, r.sog, r.k_u, r.k_k, r.i_b, r.m_g, r.eklenen||0, r.harcanan, r.kalan]);
+    } else if(key==='kantar'){
+      filename = 'kantar_girisleri';
+      header = ['Tarih','Tedarikçi','Plaka','Ölçü Kategorisi','Kilo','m³'];
+      rows = state.kantarGirisleri.map(r => [r.tarih, r.tedarikci||'', r.plaka||'', r.olcu_kategori, r.kilo, r.m3||0]);
+    } else if(key==='soyma'){
+      filename = 'torna_kayitlari';
+      header = ['Tarih','Vardiya','Kalınlık','Palet','Adet/Palet','En','Boy','m³','Tomruk Kategorisi'];
+      rows = state.soymaCiktisi.map(r => [r.tarih, r.vardiya, r.kalinlik, r.palet_sayisi, r.adet_palet, r.en, r.boy, r.m3||0, r.tomruk_kategori||'']);
+    } else if(key==='envanter'){
+      filename = 'envanter_hareketleri';
+      header = ['Tarih','Kategori','Ürün','Hareket','Miktar','Açıklama'];
+      rows = state.envanterHareketleri.map(r => [r.tarih, ENVANTER_KATEGORILERI[r.kategori]||r.kategori, r.urun_adi, r.hareket_tipi==='giris'?'Giriş':'Çıkış', r.miktar, r.aciklama||'']);
+    } else if(key==='mob_giyotin'){
+      filename = 'mobilya_giyotin_kesim';
+      header = ['Tarih','Vardiya','Ölçü','Adet','Açıklama'];
+      rows = state.giyotinKesim.map(r => [r.tarih, r.vardiya, r.olcu, r.adet, r.aciklama||'']);
+    } else if(key==='mob_dis_papel'){
+      filename = 'mobilya_dis_papel_hareketleri';
+      header = ['Tarih','Ölçü/Tür','Hareket','Miktar','Açıklama'];
+      rows = state.disPapelHareketleri.map(r => [r.tarih, r.olcu_tur, r.hareket_tipi==='giris'?'Giriş':'Çıkış', r.miktar, r.aciklama||'']);
+    } else if(key==='mob_pres'){
+      filename = 'mobilya_pres_uretim';
+      header = ['Tarih','Vardiya','Ölçü','Adet','Açıklama'];
+      rows = state.presUretim.map(r => [r.tarih, r.vardiya, r.olcu||'', r.adet, r.aciklama||'']);
+    } else if(key==='mob_cnc'){
+      filename = 'mobilya_cnc_islem';
+      header = ['Tarih','Vardiya','Ölçü','Adet','Açıklama'];
+      rows = state.cncIslem.map(r => [r.tarih, r.vardiya, r.olcu||'', r.adet, r.aciklama||'']);
+    } else if(key==='mob_zimpara'){
+      filename = 'mobilya_zimpara_fitil';
+      const BOLUM_ADI = { zimpara:'Zımpara', fitil:'Fitil Çakımı', ikisi:'Zımpara + Fitil' };
+      const CIKIS_ADI = { depo:'Depo', sevkiyat:'Sevkiyat' };
+      header = ['Tarih','Vardiya','Bölüm','Adet','Çıkış Yeri','Açıklama'];
+      rows = state.zimparaFitil.map(r => [r.tarih, r.vardiya, BOLUM_ADI[r.bolum]||r.bolum, r.adet, CIKIS_ADI[r.cikis_yeri]||r.cikis_yeri, r.aciklama||'']);
+    } else {
+      return;
+    }
+    if(!rows.length){ state.toast = {type:'err', text:'Aktarılacak veri yok.'}; render(); return; }
+    try{
+      exportToExcel(filename, header, rows);
+      state.toast = {type:'ok', text:'Excel dosyası indirildi.'};
+    }catch(e){
+      state.toast = {type:'err', text:'Excel oluşturulamadı: '+e.message};
+    }
+    render();
+  }
+
   function disPapelStokHesapla(){
     const gruplar = {};
     state.disPapelHareketleri.forEach(r=>{
@@ -521,6 +658,7 @@
       {key:'mob_pres', label:'Pres Hattı', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_cnc', label:'CNC Hattı', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_zimpara_fitil', label:'Zımpara / Fitil Çakımı', roller:['mobilya_vardiya_amiri','admin','patron']},
+      {key:'mob_cizimler', label:'Çizimler', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_kapasite', label:'Kapasite Raporu', roller:['mobilya_vardiya_amiri','admin','patron']}
     ]
   };
@@ -603,6 +741,7 @@
       case 'mob_pres': return renderPresTab(rol);
       case 'mob_cnc': return renderCncTab(rol);
       case 'mob_zimpara_fitil': return renderZimparaFitilTab(rol);
+      case 'mob_cizimler': return renderCizimlerTab(rol);
       case 'mob_kapasite': return renderMobilyaKapasiteTab(rol);
       case 'tomruk_sahasi': return renderTomrukSahasiTab(rol);
       case 'soyma_ciktisi': return renderSoymaCiktisiTab(rol);
@@ -626,6 +765,7 @@
         <div class="chip ${state.filterStatus==='tumu'?'active':''}" data-action="filter" data-status="tumu">Tümü</div>
         <input class="search" placeholder="Sorumlu veya cins ara…" value="${escapeHtml(state.search)}" data-action="search"/>
         <button class="row-btn" data-action="refresh" title="Listeyi yenile">↻ Yenile</button>
+        <button class="row-btn" data-action="excel-export" data-export="siparisler">Excel'e Aktar</button>
       </div>
       <div class="card">
         ${list.length===0 ? `<div class="empty"><b>Kayıt yok</b>Bu filtreye uyan sipariş bulunamadı.</div>` : `
@@ -876,7 +1016,8 @@
 
     const cipBar = `<div class="filters">
         ${gorunumler.map(v=>`<div class="chip ${view===v.key?'active':''}" data-action="ut-view" data-view="${v.key}">${v.label}</div>`).join('')}
-        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="uretim-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        ${view==='gunluk' ? `<button class="row-btn" data-action="excel-export" data-export="gunluk_uretim" style="margin-left:auto;">Excel'e Aktar</button>` : ''}
+        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="uretim-ekle">+ Yeni Kayıt</button>` : ''}
       </div>`;
 
     let icerik;
@@ -1011,7 +1152,8 @@
       <div class="filters">
         <div class="chip ${view==='gunluk'?'active':''}" data-action="tk-view" data-view="gunluk">Günlük Kayıtlar</div>
         <div class="chip ${view==='ozet'?'active':''}" data-action="tk-view" data-view="ozet">Aylık Özet</div>
-        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="tutkal-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        ${view==='gunluk' ? `<button class="row-btn" data-action="excel-export" data-export="tutkal" style="margin-left:auto;">Excel'e Aktar</button>` : ''}
+        ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="tutkal-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${view==='gunluk' ? renderTutkalGunluk(kayitlar, rol) : renderTutkalOzet(state.ozetAy)}
     `;
@@ -1219,6 +1361,7 @@
       <div class="filters">
         ${kategoriler.map(k=>`<div class="chip ${view===k.key?'active':''}" data-action="env-view" data-view="${k.key}">${k.label}</div>`).join('')}
         <div style="margin-left:auto;display:flex;gap:8px;">
+          <button class="row-btn" data-action="excel-export" data-export="envanter">Excel'e Aktar</button>
           ${canEnvanterGiris(rol) ? `<button class="row-btn primary" data-action="envanter-giris-ekle">+ Giriş Ekle</button>` : ''}
           ${canEnvanterCikis(rol) ? `<button class="row-btn" data-action="envanter-cikis-ekle">+ Çıkış Ekle</button>` : ''}
         </div>
@@ -1259,7 +1402,8 @@
     const kayitlar = state.giyotinKesim.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
     return `
       <div class="filters">
-        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="giyotin-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="mob_giyotin" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="giyotin-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz giyotin kesim kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1283,7 +1427,8 @@
     const hareketler = state.disPapelHareketleri.slice().sort((a,b)=> (b.tarih||'').localeCompare(a.tarih||''));
     return `
       <div class="filters">
-        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="dispapel-giris-ekle">+ Giriş Ekle</button> <button class="row-btn" data-action="dispapel-cikis-ekle" style="margin-left:8px;">+ Çıkış Ekle</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="mob_dis_papel" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="dispapel-giris-ekle">+ Giriş Ekle</button> <button class="row-btn" data-action="dispapel-cikis-ekle">+ Çıkış Ekle</button>` : ''}
       </div>
       ${stoklar.length===0 ? '' : `
       <div class="card" style="margin-bottom:14px;">
@@ -1318,7 +1463,8 @@
     const kayitlar = state.presUretim.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
     return `
       <div class="filters">
-        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="pres-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="mob_pres" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="pres-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz pres kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1341,7 +1487,8 @@
     const kayitlar = state.cncIslem.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
     return `
       <div class="filters">
-        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="cnc-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="mob_cnc" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="cnc-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz CNC kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1366,7 +1513,8 @@
     const CIKIS_ADI = { depo:'Depo', sevkiyat:'Sevkiyat' };
     return `
       <div class="filters">
-        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="zimpara-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="mob_zimpara" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="zimpara-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz zımpara/fitil kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1410,11 +1558,38 @@
     `;
   }
 
+  function renderCizimlerTab(rol){
+    const arama = state.cizimSearch.trim().toLowerCase();
+    const liste = state.cizimler.filter(c => !arama || c.dosya_adi.toLowerCase().includes(arama) || (c.kategori||'').toLowerCase().includes(arama)).slice().sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+    return `
+      <div class="filters">
+        <input class="search" placeholder="Dosya adı veya kategori ara…" value="${escapeHtml(state.cizimSearch)}" data-action="cizim-search"/>
+        <span class="hint" style="margin-left:8px;">${state.cizimler.length} çizim</span>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="cizim-yukle-ac" style="margin-left:auto;" ${state.cizimYukleniyor?'disabled':''}>${state.cizimYukleniyor?'Yükleniyor…':'+ Çizim Yükle'}</button>` : ''}
+      </div>
+      ${liste.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>${arama ? 'Bu aramaya uyan çizim bulunamadı.' : 'Henüz hiç çizim yüklenmemiş.'}</div></div>` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Dosya Adı</th><th>Kategori</th><th>Boyut</th><th>Yüklenme Tarihi</th><th>Açıklama</th><th></th></tr></thead>
+          <tbody>${liste.map(c=>`<tr>
+            <td>${escapeHtml(c.dosya_adi)}</td>
+            <td>${escapeHtml(c.kategori||'—')}</td>
+            <td class="mono">${dosyaBoyutuMetin(c.dosya_boyutu)}</td>
+            <td>${fmtDate((c.created_at||'').slice(0,10))}</td>
+            <td>${escapeHtml(c.aciklama||'—')}</td>
+            <td><button class="row-btn primary" data-action="cizim-indir" data-id="${c.id}">İndir</button>${rol==='admin'?` <button class="row-btn ghost" data-action="cizim-sil" data-id="${c.id}">Sil</button>`:''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`}
+    `;
+  }
+
   function renderKantarTab(rol){
     const kayitlar = state.kantarGirisleri.slice().sort((a,b)=> b.tarih.localeCompare(a.tarih));
     return `
       <div class="filters">
-        ${canEditKantar(rol) ? `<button class="row-btn primary" data-action="kantar-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="kantar" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditKantar(rol) ? `<button class="row-btn primary" data-action="kantar-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz kantar kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1465,7 +1640,8 @@
     return `
       <p class="hint" style="margin-bottom:14px;">Soyma verimi: <b>%${ayar('soyma_verimi_yuzde',55)}</b> ${rol==='admin' ? `<button class="row-btn" data-action="ayarlar-duzenle" style="margin-left:8px;">Ayarları Düzenle</button>` : ''}</p>
       <div class="filters">
-        ${canEdit(rol) ? `<button class="row-btn primary" data-action="soyma-ekle" style="margin-left:auto;">+ Yeni Kayıt</button>` : ''}
+        <button class="row-btn" data-action="excel-export" data-export="soyma" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEdit(rol) ? `<button class="row-btn primary" data-action="soyma-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
       ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz torna kaydı girilmemiş.</div></div>` : `
       <div class="card">
@@ -1674,6 +1850,24 @@
             <div class="form-actions">
               ${!isEdit ? `<button type="submit" name="_devam" value="1" class="btn primary">Kaydet ve Yeni Ekle</button>` : ''}
               <button type="submit" class="btn ${isEdit?'primary':''}">${isEdit?'Kaydet':'Kaydet ve Kapat'}</button>
+              <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+            </div>
+          </form>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='cizim-yukle'){
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>Çizim Yükle</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="cizim-yukle-form">
+            <div class="form-grid">
+              <div class="field full"><label>Dosya</label><input type="file" name="dosya" required></div>
+              <div class="field full"><label>Kategori (opsiyonel)</label><input type="text" name="kategori" placeholder="örn. mutfak dolabı, TV ünitesi"></div>
+              <div class="field full"><label>Açıklama (opsiyonel)</label><input type="text" name="aciklama"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary" ${state.cizimYukleniyor?'disabled':''}>${state.cizimYukleniyor?'Yükleniyor…':'Yükle'}</button>
               <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
             </div>
           </form>
@@ -2069,6 +2263,7 @@
         if(!state.presLoaded) loadPres(true);
         if(!state.cncLoaded) loadCnc(true);
         if(!state.zimparaLoaded) loadZimparaFitil(true);
+        if(!state.cizimlerLoaded) loadCizimler(true);
       }
       render();
     }
@@ -2078,12 +2273,13 @@
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
       if(state.activeTab==='kalan_tutkal' && !state.tutkalLoaded){ loadTutkal(true); }
       if(state.activeTab==='envanter' && !state.envanterLoaded){ loadEnvanter(true); }
-      if(['mob_giyotin','mob_dis_papel','mob_pres','mob_cnc','mob_zimpara_fitil','mob_kapasite'].includes(state.activeTab)){
+      if(['mob_giyotin','mob_dis_papel','mob_pres','mob_cnc','mob_zimpara_fitil','mob_kapasite','mob_cizimler'].includes(state.activeTab)){
         if(!state.giyotinLoaded) loadGiyotin(true);
         if(!state.disPapelLoaded) loadDisPapel(true);
         if(!state.presLoaded) loadPres(true);
         if(!state.cncLoaded) loadCnc(true);
         if(!state.zimparaLoaded) loadZimparaFitil(true);
+        if(!state.cizimlerLoaded) loadCizimler(true);
       }
       if(['kantar','tomruk_sahasi','uretim_planlama'].includes(state.activeTab)){
         if(!state.kantarLoaded) loadKantar(true);
@@ -2180,6 +2376,18 @@
         });
       }
     }
+    else if(action==='cizim-yukle-ac'){ state.modal = { type:'cizim-yukle' }; render(); }
+    else if(action==='cizim-indir'){
+      const c = state.cizimler.find(x=>x.id===t.dataset.id);
+      if(c) cizimIndir(c.dosya_yolu, c.dosya_adi);
+    }
+    else if(action==='cizim-sil'){
+      if(confirm('Bu çizimi kalıcı olarak silmek istediğine emin misin?')){
+        const c = state.cizimler.find(x=>x.id===t.dataset.id);
+        if(c) cizimSil(c.id, c.dosya_yolu);
+      }
+    }
+    else if(action==='excel-export'){ excelExportData(t.dataset.export); }
     else if(action==='giyotin-ekle'){ state.modal = { type:'giyotin-kaydi', kayit:null }; render(); }
     else if(action==='giyotin-duzenle'){ const r = state.giyotinKesim.find(x=>x.id===t.dataset.id); state.modal = { type:'giyotin-kaydi', kayit:r }; render(); }
     else if(action==='giyotin-sil'){
@@ -2238,6 +2446,11 @@
     if(e.target.matches('[data-action="search"]')){
       state.search = e.target.value; render();
       const s = document.querySelector('[data-action="search"]');
+      if(s){ s.focus(); s.selectionStart = s.value.length; }
+    }
+    if(e.target.matches('[data-action="cizim-search"]')){
+      state.cizimSearch = e.target.value; render();
+      const s = document.querySelector('[data-action="cizim-search"]');
       if(s){ s.focus(); s.selectionStart = s.value.length; }
     }
     if(e.target.closest('#order-form')){
@@ -2484,6 +2697,15 @@
       state.toast = sonuc.error ? {type:'err', text:sonuc.error} : {type:'ok', text:'Şifre atandı.'};
       state.modal = null;
       render();
+    }
+
+    else if(e.target.id==='cizim-yukle-form'){
+      const f = e.target;
+      const file = f.dosya.files[0];
+      if(!file){ state.toast = {type:'err', text:'Lütfen bir dosya seç.'}; render(); return; }
+      const kategori = f.kategori.value.trim();
+      const aciklama = f.aciklama.value.trim();
+      await cizimYukle(file, kategori, aciklama);
     }
 
     else if(e.target.id==='giyotin-kaydi-form'){
