@@ -338,10 +338,27 @@
     }
   }
 
+  // Supabase varsayılan olarak tek sorguda en fazla 1000 satır döndürür.
+  // Bu fonksiyon, 1000'den fazla kayıt olan tablolarda hiçbir satırın
+  // sessizce eksik kalmaması için sayfa sayfa tüm veriyi çeker.
+  async function sbTumSatirlar(queryOlusturucu){
+    let tumVeri = [];
+    let sayfa = 0;
+    const sayfaBoyutu = 1000;
+    while(true){
+      const { data, error } = await queryOlusturucu(sayfa*sayfaBoyutu, sayfa*sayfaBoyutu + sayfaBoyutu - 1);
+      if(error) return { data: tumVeri, error };
+      tumVeri = tumVeri.concat(data || []);
+      if(!data || data.length < sayfaBoyutu) break;
+      sayfa++;
+    }
+    return { data: tumVeri, error: null };
+  }
+
   // ---------- Data ----------
   async function loadOrders(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('siparisler').select('*').order('created_at', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('siparisler').select('*').order('created_at', { ascending:false }).range(from,to));
     if(!error) state.orders = data || [];
     state.loading = false;
     render();
@@ -349,7 +366,7 @@
 
   async function loadGunlukUretim(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('gunluk_uretim').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('gunluk_uretim').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true }).range(from,to));
     if(!error) state.gunlukUretim = data || [];
     state.gunlukUretimLoaded = true;
     state.loading = false;
@@ -358,7 +375,7 @@
 
   async function loadTutkal(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('tutkal_takip').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('tutkal_takip').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true }).range(from,to));
     if(!error) state.tutkal = data || [];
     state.tutkalLoaded = true;
     state.loading = false;
@@ -367,7 +384,7 @@
 
   async function loadKantar(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('kantar_girisleri').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('kantar_girisleri').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.kantarGirisleri = data || [];
     state.kantarLoaded = true;
     state.loading = false;
@@ -376,7 +393,7 @@
 
   async function loadSoyma(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('soyma_ciktisi').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('soyma_ciktisi').select('*').order('tarih', { ascending:false }).order('vardiya', { ascending:true }).range(from,to));
     if(!error) state.soymaCiktisi = data || [];
     state.soymaLoaded = true;
     state.loading = false;
@@ -405,7 +422,7 @@
 
   async function loadEnvanter(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('envanter_hareketleri').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('envanter_hareketleri').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.envanterHareketleri = data || [];
     state.envanterLoaded = true;
     state.loading = false;
@@ -414,7 +431,7 @@
 
   async function loadGiyotin(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_giyotin_kesim').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_giyotin_kesim').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.giyotinKesim = data || [];
     state.giyotinLoaded = true;
     state.loading = false;
@@ -423,7 +440,7 @@
 
   async function loadDisPapel(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_dis_papel_hareketleri').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_dis_papel_hareketleri').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.disPapelHareketleri = data || [];
     state.disPapelLoaded = true;
     state.loading = false;
@@ -432,7 +449,7 @@
 
   async function loadPres(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_pres_uretim').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_pres_uretim').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.presUretim = data || [];
     state.presLoaded = true;
     state.loading = false;
@@ -441,7 +458,7 @@
 
   async function loadCnc(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_cnc_islem').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_cnc_islem').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.cncIslem = data || [];
     state.cncLoaded = true;
     state.loading = false;
@@ -450,7 +467,7 @@
 
   async function loadZimparaFitil(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_zimpara_fitil').select('*').order('tarih', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_zimpara_fitil').select('*').order('tarih', { ascending:false }).range(from,to));
     if(!error) state.zimparaFitil = data || [];
     state.zimparaLoaded = true;
     state.loading = false;
@@ -459,7 +476,7 @@
 
   async function loadCizimler(silent){
     if(!silent){ state.loading = true; render(); }
-    const { data, error } = await sb.from('mobilya_cizimler').select('*').order('created_at', { ascending:false });
+    const { data, error } = await sbTumSatirlar((from,to) => sb.from('mobilya_cizimler').select('*').order('created_at', { ascending:false }).range(from,to));
     if(!error) state.cizimler = data || [];
     state.cizimlerLoaded = true;
     state.loading = false;
