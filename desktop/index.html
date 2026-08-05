@@ -208,6 +208,10 @@
   function fmtDateTime(iso){ if(!iso) return '—'; const d = new Date(iso); if(isNaN(d)) return iso; return d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}); }
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   function calcM3(en,boy,kalinlik,adet){ const v = (parseFloat(en)||0)*(parseFloat(boy)||0)*(parseFloat(kalinlik)||0)*(parseFloat(adet)||0)/10000000; return Math.round(v*1000)/1000; }
+
+  function benzersizDegerler(liste, alan){
+    return [...new Set(liste.map(r=>r[alan]).filter(v=>v))].sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+  }
   function calcTutkal(input, dundenKalan){
     const n = x => parseFloat(x)||0;
     const ucSabit = (n(input.alt)+n(input.ust)+n(input.sog))*7;
@@ -696,8 +700,8 @@
       rows = state.disPapelHareketleri.map(r => [r.tarih, r.olcu_tur, r.hareket_tipi==='giris'?'Giriş':'Çıkış', r.miktar, r.aciklama||'']);
     } else if(key==='mob_pres'){
       filename = 'mobilya_pres_uretim';
-      header = ['Tarih','Vardiya','Ölçü','Adet','Açıklama'];
-      rows = state.presUretim.map(r => [r.tarih, r.vardiya, r.olcu||'', r.adet, r.aciklama||'']);
+      header = ['Tarih','Vardiya','En','Boy','Kalınlık','Adet','m³','Makine','Cins','Usta','Firma','Açıklama'];
+      rows = state.presUretim.map(r => [r.tarih, r.vardiya, r.en, r.boy, r.kalinlik, r.adet, r.m3||0, r.makine||'', r.cins||'', r.usta||'', r.firma||'', r.aciklama||'']);
     } else if(key==='mob_cnc'){
       filename = 'mobilya_cnc_islem';
       header = ['Tarih','Vardiya','Ölçü','Adet','Açıklama'];
@@ -1715,26 +1719,78 @@
   }
 
   function renderPresTab(rol){
-    const kayitlar = state.presUretim.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
+    const kayitlar = state.presUretim.filter(r=>r.tarih);
+    if(kayitlar.length===0) return `
+      <div class="filters">
+        <button class="row-btn" data-action="excel-export" data-export="mob_pres" style="margin-left:auto;">Excel'e Aktar</button>
+        ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="pres-ekle">+ Yeni Kayıt</button>` : ''}
+      </div>
+      <div class="card"><div class="empty"><b>Kayıt yok</b>Henüz pres kaydı girilmemiş.</div></div>
+    `;
+
+    const gunler = {};
+    const gunSirasi = [];
+    kayitlar.forEach(r => {
+      if(!gunler[r.tarih]){ gunler[r.tarih] = {}; gunSirasi.push(r.tarih); }
+      const v = r.vardiya || 0;
+      if(!gunler[r.tarih][v]) gunler[r.tarih][v] = [];
+      gunler[r.tarih][v].push(r);
+    });
+    gunSirasi.sort((a,b)=> b.localeCompare(a));
+
+    const gunlukHtml = gunSirasi.map(tarih => {
+      const vardiyalar = gunler[tarih];
+      const vNolar = Object.keys(vardiyalar).map(Number).sort((a,b)=>a-b);
+      let gunAdet = 0, gunM3 = 0;
+      const bloklar = vNolar.map(vNo => {
+        const satirlar = vardiyalar[vNo];
+        const vAdet = satirlar.reduce((s,r)=>s+(r.adet||0),0);
+        const vM3 = satirlar.reduce((s,r)=>s+(r.m3||0),0);
+        gunAdet += vAdet; gunM3 += vM3;
+        const ustalar = [...new Set(satirlar.map(r=>r.usta).filter(Boolean))];
+        const anahtar = 'pres_' + tarih + '_' + vNo;
+        const acik = !!state.gunlukAcikBloklar[anahtar];
+        return `
+          <tr style="background:${vardiyaRenk(vNo)};border-top:2px solid var(--amber-dark);cursor:pointer;" data-action="toggle-vardiya" data-key="${anahtar}">
+            <td colspan="9" style="padding:9px 12px;">
+              <span style="display:inline-block;width:14px;color:var(--amber-dark);font-weight:700;">${acik?'▾':'▸'}</span>
+              <b style="font-size:13px;color:#3a3126;">Vardiya ${vNo||'—'}</b>
+              <span style="margin-left:18px;color:var(--muted);font-size:12px;">Ustalar:</span> <b style="font-size:12px;">${ustalar.length?escapeHtml(ustalar.join(', ')):'—'}</b>
+              <span style="float:right;font-weight:700;font-size:13px;">${vM3.toFixed(3)} m³ <span style="font-weight:400;color:var(--muted);font-size:12px;">(${vAdet} adet)</span></span>
+            </td>
+          </tr>
+          ${acik ? satirlar.map(r=>`<tr style="background:${vardiyaRenk(vNo)};">
+            <td></td>
+            <td class="mono">${r.en||'—'}×${r.boy||'—'}×${r.kalinlik||'—'}</td>
+            <td>${escapeHtml(r.makine||'—')}</td>
+            <td>${escapeHtml(r.cins||'—')}</td>
+            <td>${escapeHtml(r.usta||'—')}</td>
+            <td>${escapeHtml(r.firma||'—')}</td>
+            <td class="mono">${r.adet}</td>
+            <td class="mono">${(r.m3||0).toFixed(3)}</td>
+            <td>${canEditMobilya(rol) ? `<button class="row-btn" data-action="pres-duzenle" data-id="${r.id}">Düzenle</button>${rol==='admin'?` <button class="row-btn ghost" data-action="pres-sil" data-id="${r.id}">Sil</button>`:''}` : ''}</td>
+          </tr>`).join('') : ''}
+        `;
+      }).join('');
+
+      return `<div class="card" style="margin-bottom:16px;overflow:hidden;">
+        <table>
+          <thead><tr><th style="width:1%;"></th><th>Ölçü</th><th>Makine</th><th>Cins</th><th>Usta</th><th>Firma</th><th>Adet</th><th>m³</th><th></th></tr></thead>
+          <tbody>
+            <tr><td colspan="9" style="font-weight:800;font-size:14px;background:var(--amber);color:#1c1f22;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</td></tr>
+            ${bloklar}
+            <tr><td colspan="6" style="text-align:right;font-weight:700;padding-top:10px;">Gün toplamı:</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunAdet}</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunM3.toFixed(3)}</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>`;
+    }).join('');
+
     return `
       <div class="filters">
         <button class="row-btn" data-action="excel-export" data-export="mob_pres" style="margin-left:auto;">Excel'e Aktar</button>
         ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="pres-ekle">+ Yeni Kayıt</button>` : ''}
       </div>
-      ${kayitlar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz pres kaydı girilmemiş.</div></div>` : `
-      <div class="card">
-        <table>
-          <thead><tr><th>Tarih</th><th>Vardiya</th><th>Ölçü</th><th>Adet</th><th>Açıklama</th><th></th></tr></thead>
-          <tbody>${kayitlar.map(r=>`<tr>
-            <td>${fmtDate(r.tarih)}</td>
-            <td class="mono">${r.vardiya}</td>
-            <td>${escapeHtml(r.olcu||'—')}</td>
-            <td class="mono">${r.adet}</td>
-            <td>${escapeHtml(r.aciklama||'—')}</td>
-            <td>${canEditMobilya(rol) ? `<button class="row-btn" data-action="pres-duzenle" data-id="${r.id}">Düzenle</button>${rol==='admin'?` <button class="row-btn ghost" data-action="pres-sil" data-id="${r.id}">Sil</button>`:''}` : ''}</td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>`}
+      ${gunlukHtml}
     `;
   }
 
@@ -2260,6 +2316,10 @@
     if(m.type==='pres-kaydi'){
       const r = m.kayit || {};
       const isEdit = !!m.kayit;
+      const makineListesi = benzersizDegerler(state.presUretim, 'makine');
+      const cinsListesi = benzersizDegerler(state.presUretim, 'cins');
+      const ustaListesi = benzersizDegerler(state.presUretim, 'usta');
+      const firmaListesi = benzersizDegerler(state.presUretim, 'firma');
       return `<div class="overlay" data-action="overlay-close"><div class="modal">
         <div class="modal-head"><h3>${isEdit?'Pres Kaydını Düzenle':'Yeni Pres Kaydı'}</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">
@@ -2271,10 +2331,21 @@
                 <option value="2" ${r.vardiya===2?'selected':''}>2</option>
                 <option value="3" ${r.vardiya===3?'selected':''}>3</option>
               </select></div>
-              <div class="field full"><label>Ölçü (opsiyonel)</label><input type="text" name="olcu" value="${escapeHtml(r.olcu||'')}"></div>
+              <div class="field"><label>En (cm)</label><input type="number" step="any" min="0" name="en" required value="${r.en||''}"></div>
+              <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" required value="${r.boy||''}"></div>
+              <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${r.kalinlik||''}"></div>
               <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${r.adet||''}"></div>
-              <div class="field full"><label>Açıklama</label><input type="text" name="aciklama" value="${escapeHtml(r.aciklama||'')}" placeholder="opsiyonel"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="mp-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+              <div class="field"><label>Makine</label><input type="text" name="makine" list="mp-makine-list" value="${escapeHtml(r.makine||'')}" placeholder="örn. 221"></div>
+              <div class="field"><label>Cins</label><input type="text" name="cins" list="mp-cins-list" value="${escapeHtml(r.cins||'')}" placeholder="örn. Huş/Huş"></div>
+              <div class="field"><label>Usta</label><input type="text" name="usta" list="mp-usta-list" value="${escapeHtml(r.usta||'')}"></div>
+              <div class="field"><label>Firma (opsiyonel)</label><input type="text" name="firma" list="mp-firma-list" value="${escapeHtml(r.firma||'')}"></div>
+              <div class="field full"><label>Açıklama (opsiyonel)</label><input type="text" name="aciklama" value="${escapeHtml(r.aciklama||'')}"></div>
             </div>
+            <datalist id="mp-makine-list">${makineListesi.map(v=>`<option value="${escapeHtml(v)}">`).join('')}</datalist>
+            <datalist id="mp-cins-list">${cinsListesi.map(v=>`<option value="${escapeHtml(v)}">`).join('')}</datalist>
+            <datalist id="mp-usta-list">${ustaListesi.map(v=>`<option value="${escapeHtml(v)}">`).join('')}</datalist>
+            <datalist id="mp-firma-list">${firmaListesi.map(v=>`<option value="${escapeHtml(v)}">`).join('')}</datalist>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
               <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
@@ -2832,6 +2903,11 @@
       const readout = document.getElementById('uk-m3-readout');
       if(readout) readout.value = calcM3(form.en.value, form.boy.value, form.kalinlik.value, form.adet.value).toFixed(3);
     }
+    if(e.target.closest('#pres-kaydi-form')){
+      const form = e.target.closest('#pres-kaydi-form');
+      const readout = document.getElementById('mp-m3-readout');
+      if(readout) readout.value = calcM3(form.en.value, form.boy.value, form.kalinlik.value, form.adet.value).toFixed(3);
+    }
     if(e.target.closest('#tutkal-kaydi-form')){
       const form = e.target.closest('#tutkal-kaydi-form');
       const dunden = form.dataset.dunden;
@@ -3138,10 +3214,17 @@
       const data = {
         tarih: f.tarih.value,
         vardiya: parseInt(f.vardiya.value,10),
-        olcu: f.olcu.value.trim() || null,
+        en: f.en.value?parseFloat(f.en.value):null,
+        boy: f.boy.value?parseFloat(f.boy.value):null,
+        kalinlik: f.kalinlik.value?parseFloat(f.kalinlik.value):null,
         adet: parseInt(f.adet.value,10),
+        makine: f.makine.value.trim() || null,
+        cins: f.cins.value.trim() || null,
+        usta: f.usta.value.trim() || null,
+        firma: f.firma.value.trim() || null,
         aciklama: f.aciklama.value.trim() || null
       };
+      data.m3 = calcM3(data.en, data.boy, data.kalinlik, data.adet);
       let error;
       if(state.modal.kayit){
         ({ error } = await sb.from('mobilya_pres_uretim').update(data).eq('id', state.modal.kayit.id));
