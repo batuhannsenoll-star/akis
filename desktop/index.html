@@ -194,6 +194,7 @@
     cizimler: [], cizimlerLoaded: false, cizimYukleniyor: false, cizimSearch: '',
     cizimSeciliFirma: null, cizimTopluDosyalar: [], cizimTopluFirma: '', cizimTopluIlerleme: {mevcut:0, toplam:0},
     ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
+    ozetYil: String(new Date().getFullYear()),
     gunlukBaslangic: '', gunlukBitis: '',
     gunlukAcikBloklar: {},
     loading: true,
@@ -625,6 +626,50 @@
       }
       render();
       return;
+    } else if(key==='yillik_ozet'){
+      const yil = state.ozetYil;
+      const o = hesaplaYillikOzet(yil);
+      filename = 'uretim_yillik_ozet_' + yil;
+      const aoa = [
+        ['Yıllık Özet', yil],
+        [],
+        ['Üretim Ayı', o.uretimAyi],
+        ['Üretim Günü', o.uretimGunu],
+        ['Toplam Adet', o.toplamAdet],
+        ['Toplam m³', Math.round(o.toplamM3*1000)/1000],
+        ['Ort. Aylık m³', Math.round(o.ortAyM3*1000)/1000],
+        ['Fire Adet', o.fireAdet],
+        ['Fire m³', Math.round(o.fireM3*1000)/1000],
+        ['Toplam Fire Oranı (%)', Math.round(o.firePct*100)/100],
+        [],
+        ['Vardiya Bazlı Üretim (m³)'],
+        ...Object.entries(o.vardiyaBazli).map(([k,v]) => [k, Math.round(v*1000)/1000]),
+        [],
+        ['Vardiya Bazlı Fire (m³)'],
+        ...Object.entries(o.vardiyaFireBazli).map(([k,v]) => [k, Math.round(v*1000)/1000]),
+        [],
+        ['Usta Bazlı Üretim (m³)'],
+        ...Object.entries(o.ustaBazli).map(([k,v]) => [k, Math.round(v*1000)/1000]),
+        [],
+        ['Makine Bazlı (m³)'],
+        ...Object.entries(o.makineBazli).map(([k,v]) => [k, Math.round(v*1000)/1000]),
+        [],
+        ['Cins Bazlı (m³)'],
+        ...Object.entries(o.cinsBazli).map(([k,v]) => [k, Math.round(v*1000)/1000]),
+        [],
+        ['Kalınlık Bazlı'],
+        ['Kalınlık','Adet','m³'],
+        ...Object.entries(o.kalinlikBazli).map(([k,v]) => [k, v.adet, Math.round(v.m3*1000)/1000])
+      ];
+      if(o.kayitSayisi===0){ state.toast = {type:'err', text:'Aktarılacak veri yok.'}; render(); return; }
+      try{
+        exportToExcelAoa(filename, aoa);
+        state.toast = {type:'ok', text:'Excel dosyası indirildi.'};
+      }catch(e){
+        state.toast = {type:'err', text:'Excel oluşturulamadı: '+e.message};
+      }
+      render();
+      return;
     } else if(key==='tutkal'){
       filename = 'tutkal_takip';
       header = ['Tarih','Vardiya','Alt','Üst','Soğuk','K.U.','K.K.','İ.B.','M.G.','Eklenen','Harcanan','Kalan'];
@@ -744,6 +789,7 @@
   const URETIM_TAKIP_ALT_GORUNUMLER = [
     {key:'gunluk', label:'Günlük Kayıtlar'},
     {key:'ozet', label:'Aylık Özet'},
+    {key:'yillik', label:'Yıllık Özet'},
     {key:'tutkal', label:'Tutkal Takip'},
     {key:'kapasite', label:'Kapasite Raporu'},
     {key:'torna', label:'Torna'},
@@ -1090,6 +1136,47 @@
     };
   }
 
+  function hesaplaYillikOzet(yil){
+    const kayitlar = state.gunlukUretim.filter(r => r.tarih && r.tarih.slice(0,4)===yil);
+    const toplamAdet = kayitlar.reduce((s,r)=>s+(r.adet||0),0);
+    const toplamM3 = kayitlar.reduce((s,r)=>s+(r.m3||0),0);
+    const fireAdet = kayitlar.reduce((s,r)=>s+(r.fire_adet||0),0);
+    const fireM3 = kayitlar.reduce((s,r)=>s+(r.fire_m3||0),0);
+    const gunler = new Set(kayitlar.map(r=>r.tarih));
+    const aylar = new Set(kayitlar.map(r=>r.tarih.slice(0,7)));
+    const grupla = (keyFn, alanFn) => {
+      const m = {};
+      kayitlar.forEach(r => { const k = keyFn(r) || '—'; m[k] = (m[k]||0) + (alanFn ? alanFn(r) : (r.m3||0)); });
+      return m;
+    };
+    const kalinlikBazli = {};
+    kayitlar.forEach(r => {
+      const k = (r.kalinlik!=null ? r.kalinlik+' mm' : '—');
+      if(!kalinlikBazli[k]) kalinlikBazli[k] = { adet:0, m3:0 };
+      kalinlikBazli[k].adet += (r.adet||0);
+      kalinlikBazli[k].m3 += (r.m3||0);
+    });
+    // Ay bazlı toplam m³ (yıl içindeki trend için)
+    const aylikM3 = {};
+    kayitlar.forEach(r => { const k = r.tarih.slice(0,7); aylikM3[k] = (aylikM3[k]||0) + (r.m3||0); });
+    return {
+      kayitSayisi: kayitlar.length,
+      uretimGunu: gunler.size,
+      uretimAyi: aylar.size,
+      toplamAdet, toplamM3, fireAdet, fireM3,
+      firePct: toplamM3 ? (fireM3/toplamM3*100) : 0,
+      ortAyM3: aylar.size ? (toplamM3/aylar.size) : 0,
+      ortGunM3: gunler.size ? (toplamM3/gunler.size) : 0,
+      makineBazli: grupla(r=>r.makine),
+      cinsBazli: grupla(r=>r.cins),
+      vardiyaBazli: grupla(r=>'Vardiya '+r.vardiya),
+      vardiyaFireBazli: grupla(r=>'Vardiya '+r.vardiya, r=>r.fire_m3||0),
+      ustaBazli: grupla(r=>r.usta),
+      kalinlikBazli,
+      aylikM3
+    };
+  }
+
   function renderKirilimTablosu(baslik, obj){
     const girdiler = Object.entries(obj).sort((a,b)=>b[1]-a[1]);
     if(girdiler.length===0) return '';
@@ -1118,11 +1205,13 @@
         ${view==='gunluk' ? `<button class="row-btn" data-action="excel-export" data-export="gunluk_uretim" style="margin-left:auto;">Excel'e Aktar</button>` : ''}
         ${view==='gunluk' && canEdit(rol) ? `<button class="row-btn primary" data-action="uretim-ekle">+ Yeni Kayıt</button>` : ''}
         ${view==='ozet' ? `<button class="row-btn" data-action="excel-export" data-export="aylik_ozet" style="margin-left:auto;">Excel'e Aktar</button>` : ''}
+        ${view==='yillik' ? `<button class="row-btn" data-action="excel-export" data-export="yillik_ozet" style="margin-left:auto;">Excel'e Aktar</button>` : ''}
       </div>`;
 
     let icerik;
     if(view==='gunluk') icerik = renderGunlukKayitlar(kayitlar, rol);
     else if(view==='ozet') icerik = renderAylikOzet(ay, ozet);
+    else if(view==='yillik') icerik = renderYillikOzet(state.ozetYil, hesaplaYillikOzet(state.ozetYil));
     else if(view==='tutkal') icerik = renderTutkalTab(rol);
     else if(view==='kapasite') icerik = renderHatTab(rol);
     else if(view==='torna') icerik = renderSoymaCiktisiTab(rol);
@@ -1230,6 +1319,41 @@
         ${renderKirilimTablosu('Cins Bazlı (m³)', o.cinsBazli)}
         ${renderKirilimTablosu('Vardiya Bazlı (m³)', o.vardiyaBazli)}
         ${renderKirilimTablosu('Usta Bazlı (m³)', o.ustaBazli)}
+      </div>
+      <div style="margin-top:16px;max-width:420px;">
+        ${renderKalinlikTablosu(o.kalinlikBazli)}
+      </div>
+    `;
+  }
+
+  function renderYillikOzet(yil, o){
+    const yillar = [...new Set(state.gunlukUretim.filter(r=>r.tarih).map(r=>r.tarih.slice(0,4)))].sort();
+    if(!yillar.includes(yil)) yillar.push(yil);
+    yillar.sort();
+    return `
+      <div class="filters">
+        <select data-action="ozet-yil" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+          ${yillar.map(y=>`<option value="${y}" ${y===yil?'selected':''}>${y}</option>`).join('')}
+        </select>
+        <span class="hint" style="align-self:center;">${yil} yılı özeti · ${o.uretimAyi} ay, ${o.uretimGunu} gün üretim</span>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.uretimAyi}</div><div class="label">Üretim Ayı</div></div>
+        <div class="stat"><div class="num">${o.toplamAdet}</div><div class="label">Toplam Adet</div></div>
+        <div class="stat"><div class="num">${o.toplamM3.toFixed(2)}</div><div class="label">Toplam m³</div></div>
+        <div class="stat"><div class="num">${o.ortAyM3.toFixed(2)}</div><div class="label">Ort. Aylık m³</div></div>
+      </div>
+      <div class="summary">
+        <div class="stat"><div class="num">${o.fireAdet}</div><div class="label">Fire Adet</div></div>
+        <div class="stat"><div class="num">${o.fireM3.toFixed(3)}</div><div class="label">Fire m³</div></div>
+        <div class="stat"><div class="num">%${o.firePct.toFixed(2)}</div><div class="label">Toplam Fire Oranı</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+        ${renderKirilimTablosu('Vardiya Bazlı Üretim (m³)', o.vardiyaBazli)}
+        ${renderKirilimTablosu('Vardiya Bazlı Fire (m³)', o.vardiyaFireBazli)}
+        ${renderKirilimTablosu('Usta Bazlı Üretim (m³)', o.ustaBazli)}
+        ${renderKirilimTablosu('Makine Bazlı Üretim (m³)', o.makineBazli)}
+        ${renderKirilimTablosu('Cins Bazlı Üretim (m³)', o.cinsBazli)}
       </div>
       <div style="margin-top:16px;max-width:420px;">
         ${renderKalinlikTablosu(o.kalinlikBazli)}
@@ -2723,6 +2847,9 @@
     }
     if(e.target.matches('[data-action="ozet-ay"]')){
       state.ozetAy = e.target.value; render();
+    }
+    if(e.target.matches('[data-action="ozet-yil"]')){
+      state.ozetYil = e.target.value; render();
     }
     if(e.target.matches('[data-action="gunluk-tarih-baslangic"]')){
       state.gunlukBaslangic = e.target.value; render();
