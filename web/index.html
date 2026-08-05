@@ -200,6 +200,7 @@
     cncIslem: [], cncLoaded: false,
     zimparaFitil: [], zimparaLoaded: false,
     cizimler: [], cizimlerLoaded: false, cizimYukleniyor: false, cizimSearch: '',
+    cizimSeciliFirma: null, cizimTopluDosyalar: [], cizimTopluFirma: '', cizimTopluIlerleme: {mevcut:0, toplam:0},
     ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
     gunlukBaslangic: '', gunlukBitis: '',
     gunlukAcikBloklar: {},
@@ -498,32 +499,51 @@
     return (bayt/(1024*1024)).toFixed(1) + ' MB';
   }
 
-  async function cizimYukle(file, kategori, aciklama){
-    state.cizimYukleniyor = true; render();
+  function dosyaAdiParcala(adi){
+    const noktaIndex = adi.lastIndexOf('.');
+    if(noktaIndex <= 0) return { adSiz: adi, uzanti: '' };
+    return { adSiz: adi.slice(0, noktaIndex), uzanti: adi.slice(noktaIndex) };
+  }
+
+  async function cizimYukleTek(file, dosyaAdi, kategori, aciklama){
     const guvenliAd = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const yol = `${new Date().toISOString().slice(0,7)}/${crypto.randomUUID()}_${guvenliAd}`;
     const { error: uploadError } = await sb.storage.from('cizimler').upload(yol, file);
-    if(uploadError){
-      state.cizimYukleniyor = false;
-      state.toast = {type:'err', text:'Yüklenemedi: '+uploadError.message};
-      render();
-      return;
-    }
+    if(uploadError) return { ok:false, error: uploadError.message };
     const { error: dbError } = await sb.from('mobilya_cizimler').insert([{
-      dosya_adi: file.name,
+      dosya_adi: dosyaAdi,
       kategori: kategori || null,
       aciklama: aciklama || null,
       dosya_yolu: yol,
       dosya_boyutu: file.size,
       created_by: state.user.id
     }]);
-    state.cizimYukleniyor = false;
-    if(dbError){
-      state.toast = {type:'err', text:'Kaydedilemedi: '+dbError.message};
-    }else{
-      state.toast = {type:'ok', text:'Çizim yüklendi: '+file.name};
-      state.modal = null;
+    if(dbError) return { ok:false, error: dbError.message };
+    return { ok:true };
+  }
+
+  async function cizimTopluYukleBaslat(){
+    const dosyalar = state.cizimTopluDosyalar;
+    const firma = (state.cizimTopluFirma||'').trim();
+    if(!dosyalar.length){ state.toast = {type:'err', text:'Lütfen en az bir dosya seç.'}; render(); return; }
+    state.cizimYukleniyor = true;
+    state.cizimTopluIlerleme = { mevcut: 0, toplam: dosyalar.length };
+    render();
+    let basarili = 0, basarisiz = 0, sonHata = '';
+    for(const d of dosyalar){
+      const finalAd = (d.yeniAd.trim() || d.adSiz) + d.uzanti;
+      const sonuc = await cizimYukleTek(d.file, finalAd, firma, '');
+      if(sonuc.ok) basarili++; else { basarisiz++; sonHata = sonuc.error; }
+      state.cizimTopluIlerleme.mevcut++;
+      render();
     }
+    state.cizimYukleniyor = false;
+    state.cizimTopluDosyalar = [];
+    state.cizimTopluFirma = '';
+    state.modal = null;
+    state.toast = basarisiz===0
+      ? {type:'ok', text:`${basarili} çizim yüklendi.`}
+      : {type:'err', text:`${basarili} çizim yüklendi, ${basarisiz} dosya başarısız oldu (${sonHata}).`};
     await loadCizimler(true);
   }
 
@@ -1676,25 +1696,56 @@
   }
 
   function renderCizimlerTab(rol){
+    if(state.cizimSeciliFirma === null){
+      const gruplu = {};
+      state.cizimler.forEach(c => {
+        const firma = c.kategori || 'Firmasız';
+        gruplu[firma] = (gruplu[firma]||0) + 1;
+      });
+      const firmalar = Object.keys(gruplu).sort((a,b)=> a.localeCompare(b,'tr'));
+      return `
+        <div class="filters">
+          <span class="hint">${state.cizimler.length} çizim, ${firmalar.length} firma</span>
+          ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="cizim-yukle-ac" style="margin-left:auto;">+ Çizim Yükle</button>` : ''}
+        </div>
+        ${firmalar.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>Henüz hiç çizim yüklenmemiş.</div></div>` : `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+          ${firmalar.map(f=>`<div class="card" style="cursor:pointer;padding:18px;" data-action="cizim-firma-sec" data-firma="${escapeHtml(f)}">
+            <div style="font-weight:700;font-size:14px;margin-bottom:6px;">📁 ${escapeHtml(f)}</div>
+            <div class="hint">${gruplu[f]} çizim</div>
+          </div>`).join('')}
+        </div>`}
+      `;
+    }
+
+    const firma = state.cizimSeciliFirma;
     const arama = state.cizimSearch.trim().toLowerCase();
-    const liste = state.cizimler.filter(c => !arama || c.dosya_adi.toLowerCase().includes(arama) || (c.kategori||'').toLowerCase().includes(arama)).slice().sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+    const liste = state.cizimler
+      .filter(c => (c.kategori || 'Firmasız') === firma)
+      .filter(c => !arama || c.dosya_adi.toLowerCase().includes(arama))
+      .slice().sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+
     return `
       <div class="filters">
-        <input class="search" placeholder="Dosya adı veya kategori ara…" value="${escapeHtml(state.cizimSearch)}" data-action="cizim-search"/>
-        <span class="hint" style="margin-left:8px;">${state.cizimler.length} çizim</span>
+        <button class="row-btn" data-action="cizim-firma-geri">← Firmalar</button>
+        <b style="margin-left:8px;">${escapeHtml(firma)}</b>
+        <input class="search" placeholder="Dosya adı ara…" value="${escapeHtml(state.cizimSearch)}" data-action="cizim-search" style="margin-left:16px;"/>
         ${canEditMobilya(rol) ? `<button class="row-btn primary" data-action="cizim-yukle-ac" style="margin-left:auto;" ${state.cizimYukleniyor?'disabled':''}>${state.cizimYukleniyor?'Yükleniyor…':'+ Çizim Yükle'}</button>` : ''}
       </div>
-      ${liste.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>${arama ? 'Bu aramaya uyan çizim bulunamadı.' : 'Henüz hiç çizim yüklenmemiş.'}</div></div>` : `
+      ${liste.length===0 ? `<div class="card"><div class="empty"><b>Kayıt yok</b>${arama ? 'Bu aramaya uyan çizim bulunamadı.' : 'Bu firmada henüz çizim yok.'}</div></div>` : `
       <div class="card">
         <table>
-          <thead><tr><th>Dosya Adı</th><th>Kategori</th><th>Boyut</th><th>Yüklenme Tarihi</th><th>Açıklama</th><th></th></tr></thead>
+          <thead><tr><th>Dosya Adı (Model)</th><th>Boyut</th><th>Yüklenme Tarihi</th><th>Açıklama</th><th></th></tr></thead>
           <tbody>${liste.map(c=>`<tr>
             <td>${escapeHtml(c.dosya_adi)}</td>
-            <td>${escapeHtml(c.kategori||'—')}</td>
             <td class="mono">${dosyaBoyutuMetin(c.dosya_boyutu)}</td>
             <td>${fmtDate((c.created_at||'').slice(0,10))}</td>
             <td>${escapeHtml(c.aciklama||'—')}</td>
-            <td><button class="row-btn primary" data-action="cizim-indir" data-id="${c.id}">İndir</button>${rol==='admin'?` <button class="row-btn ghost" data-action="cizim-sil" data-id="${c.id}">Sil</button>`:''}</td>
+            <td>
+              <button class="row-btn primary" data-action="cizim-indir" data-id="${c.id}">İndir</button>
+              ${canEditMobilya(rol) ? ` <button class="row-btn" data-action="cizim-duzenle-ac" data-id="${c.id}">Düzenle</button>` : ''}
+              ${rol==='admin'?` <button class="row-btn ghost" data-action="cizim-sil" data-id="${c.id}">Sil</button>`:''}
+            </td>
           </tr>`).join('')}</tbody>
         </table>
       </div>`}
@@ -1994,17 +2045,46 @@
       </div></div>`;
     }
     if(m.type==='cizim-yukle'){
-      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+      return `<div class="overlay" data-action="overlay-close"><div class="modal" style="max-width:640px;">
         <div class="modal-head"><h3>Çizim Yükle</h3><button class="close-x" data-action="close-modal">×</button></div>
         <div class="modal-body">
-          <form id="cizim-yukle-form">
+          <div class="form-grid">
+            <div class="field full"><label>Firma</label><input type="text" value="${escapeHtml(state.cizimTopluFirma)}" data-action="cizim-toplu-firma" placeholder="örn. ABC Mobilya"></div>
+            <div class="field full"><label>Dosyalar</label><input type="file" multiple data-action="cizim-toplu-dosya-sec"></div>
+          </div>
+          ${state.cizimTopluDosyalar.length>0 ? `
+          <div style="max-height:320px;overflow-y:auto;margin-top:14px;border:1px solid var(--line);border-radius:8px;">
+            <table>
+              <thead><tr><th>Orijinal Dosya</th><th>Model Adı (yeni isim)</th></tr></thead>
+              <tbody>${state.cizimTopluDosyalar.map((d,i)=>`<tr>
+                <td style="font-size:12px;color:var(--muted);">${escapeHtml(d.file.name)}</td>
+                <td><input type="text" value="${escapeHtml(d.yeniAd)}" data-action="cizim-toplu-ad-degistir" data-index="${i}" style="width:100%;"></td>
+              </tr>`).join('')}</tbody>
+            </table>
+          </div>
+          <p class="hint" style="margin-top:8px;">${state.cizimTopluDosyalar.length} dosya seçildi.${state.cizimYukleniyor ? ` Yükleniyor: ${state.cizimTopluIlerleme.mevcut}/${state.cizimTopluIlerleme.toplam}` : ''}</p>
+          ` : ''}
+          <div class="form-actions" style="margin-top:14px;">
+            <button type="button" class="btn primary" data-action="cizim-toplu-yukle-baslat" ${state.cizimYukleniyor || !state.cizimTopluDosyalar.length ? 'disabled' : ''}>${state.cizimYukleniyor ? 'Yükleniyor…' : 'Yükle'}</button>
+            <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
+          </div>
+        </div>
+      </div></div>`;
+    }
+    if(m.type==='cizim-duzenle'){
+      const c = m.kayit;
+      const parcalar = dosyaAdiParcala(c.dosya_adi);
+      return `<div class="overlay" data-action="overlay-close"><div class="modal">
+        <div class="modal-head"><h3>Çizimi Düzenle</h3><button class="close-x" data-action="close-modal">×</button></div>
+        <div class="modal-body">
+          <form id="cizim-duzenle-form" data-uzanti="${escapeHtml(parcalar.uzanti)}">
             <div class="form-grid">
-              <div class="field full"><label>Dosya</label><input type="file" name="dosya" required></div>
-              <div class="field full"><label>Kategori (opsiyonel)</label><input type="text" name="kategori" placeholder="örn. mutfak dolabı, TV ünitesi"></div>
-              <div class="field full"><label>Açıklama (opsiyonel)</label><input type="text" name="aciklama"></div>
+              <div class="field full"><label>Model Adı</label><input type="text" name="model_adi" required value="${escapeHtml(parcalar.adSiz)}"></div>
+              <div class="field full"><label>Firma</label><input type="text" name="firma" value="${escapeHtml(c.kategori||'')}" placeholder="örn. ABC Mobilya"></div>
+              <div class="field full"><label>Açıklama (opsiyonel)</label><input type="text" name="aciklama" value="${escapeHtml(c.aciklama||'')}"></div>
             </div>
             <div class="form-actions">
-              <button type="submit" class="btn primary" ${state.cizimYukleniyor?'disabled':''}>${state.cizimYukleniyor?'Yükleniyor…':'Yükle'}</button>
+              <button type="submit" class="btn primary">Kaydet</button>
               <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
             </div>
           </form>
@@ -2514,7 +2594,19 @@
         });
       }
     }
-    else if(action==='cizim-yukle-ac'){ state.modal = { type:'cizim-yukle' }; render(); }
+    else if(action==='cizim-yukle-ac'){
+      state.cizimTopluFirma = state.cizimSeciliFirma && state.cizimSeciliFirma !== 'Firmasız' ? state.cizimSeciliFirma : '';
+      state.cizimTopluDosyalar = [];
+      state.modal = { type:'cizim-yukle' };
+      render();
+    }
+    else if(action==='cizim-firma-sec'){ state.cizimSeciliFirma = t.dataset.firma; state.cizimSearch = ''; render(); }
+    else if(action==='cizim-firma-geri'){ state.cizimSeciliFirma = null; state.cizimSearch = ''; render(); }
+    else if(action==='cizim-toplu-yukle-baslat'){ cizimTopluYukleBaslat(); }
+    else if(action==='cizim-duzenle-ac'){
+      const c = state.cizimler.find(x=>x.id===t.dataset.id);
+      if(c){ state.modal = { type:'cizim-duzenle', kayit:c }; render(); }
+    }
     else if(action==='cizim-indir'){
       const c = state.cizimler.find(x=>x.id===t.dataset.id);
       if(c) cizimIndir(c.dosya_yolu, c.dosya_adi);
@@ -2597,6 +2689,16 @@
       const s = document.querySelector('[data-action="cizim-search"]');
       if(s){ s.focus(); s.selectionStart = s.value.length; }
     }
+    if(e.target.matches('[data-action="cizim-toplu-firma"]')){
+      state.cizimTopluFirma = e.target.value; render();
+      const s = document.querySelector('[data-action="cizim-toplu-firma"]');
+      if(s){ s.focus(); s.selectionStart = s.value.length; }
+    }
+    if(e.target.matches('[data-action="cizim-toplu-ad-degistir"]')){
+      // Her tuşta tüm modalı yeniden çizmiyoruz (odak kaybını önlemek için) - sadece diziyi güncelliyoruz.
+      const i = parseInt(e.target.dataset.index, 10);
+      if(state.cizimTopluDosyalar[i]) state.cizimTopluDosyalar[i].yeniAd = e.target.value;
+    }
     if(e.target.closest('#order-form')){
       const form = e.target.closest('#order-form');
       const readout = document.getElementById('m3-readout');
@@ -2654,6 +2756,14 @@
   });
 
   app.addEventListener('change', async function(e){
+    if(e.target.matches('[data-action="cizim-toplu-dosya-sec"]')){
+      const dosyalar = Array.from(e.target.files || []);
+      state.cizimTopluDosyalar = dosyalar.map(file => {
+        const { adSiz, uzanti } = dosyaAdiParcala(file.name);
+        return { file, adSiz, uzanti, yeniAd: adSiz };
+      });
+      render();
+    }
     if(e.target.matches('#soyma-kalinlik-select')){
       const form = e.target.closest('#soyma-kaydi-form');
       form.adet_palet.value = e.target.value==='1.2' ? 700 : 400;
@@ -2850,13 +2960,16 @@
       render();
     }
 
-    else if(e.target.id==='cizim-yukle-form'){
+    else if(e.target.id==='cizim-duzenle-form'){
       const f = e.target;
-      const file = f.dosya.files[0];
-      if(!file){ state.toast = {type:'err', text:'Lütfen bir dosya seç.'}; render(); return; }
-      const kategori = f.kategori.value.trim();
+      const uzanti = f.dataset.uzanti || '';
+      const yeniAd = f.model_adi.value.trim() + uzanti;
+      const firma = f.firma.value.trim();
       const aciklama = f.aciklama.value.trim();
-      await cizimYukle(file, kategori, aciklama);
+      const { error } = await sb.from('mobilya_cizimler').update({ dosya_adi: yeniAd, kategori: firma || null, aciklama: aciklama || null }).eq('id', state.modal.kayit.id);
+      state.toast = error ? {type:'err', text:'Güncellenemedi: '+error.message} : {type:'ok', text:'Çizim güncellendi.'};
+      state.modal = null;
+      await loadCizimler(true);
     }
 
     else if(e.target.id==='giyotin-kaydi-form'){
