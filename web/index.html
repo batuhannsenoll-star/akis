@@ -1250,12 +1250,18 @@
       const vardiyaNolar = Object.keys(vardiyalar).map(Number).sort((a,b)=>a-b);
       let gunAdet = 0, gunM3 = 0, gunFireM3 = 0;
 
+      let gunBeklenenTutkal = 0, gunGercekTutkal = 0, gunGercekTutkalVarMi = false;
       const vardiyaBloklari = vardiyaNolar.map(vNo => {
         const satirlar = vardiyalar[vNo];
         const vAdet = satirlar.reduce((s,r)=>s+(r.adet||0),0);
         const vM3 = satirlar.reduce((s,r)=>s+(r.m3||0),0);
         const vFireM3 = satirlar.reduce((s,r)=>s+(r.fire_m3||0),0);
         gunAdet += vAdet; gunM3 += vM3; gunFireM3 += vFireM3;
+        const vBeklenenTutkal = beklenenTutkalKg(satirlar);
+        const vGercekTutkal = gercekTutkalKg(tarih, vNo);
+        gunBeklenenTutkal += vBeklenenTutkal;
+        if(vGercekTutkal!=null){ gunGercekTutkal += vGercekTutkal; gunGercekTutkalVarMi = true; }
+        const vFarkTutkal = vGercekTutkal!=null ? (vGercekTutkal - vBeklenenTutkal) : null;
         const ustaCkp = satirlar.find(r=>r.makine==='Ç-K-P' && r.usta)?.usta;
         const ustaKkp = satirlar.find(r=>r.makine==='K-K-P' && r.usta)?.usta;
         const anahtar = tarih + '_' + vNo;
@@ -1268,6 +1274,7 @@
               <span style="margin-left:18px;color:var(--muted);font-size:12px;">Ç-K-P:</span> <b style="font-size:12px;">${ustaCkp?escapeHtml(ustaCkp):'—'}</b>
               <span style="margin-left:18px;color:var(--muted);font-size:12px;">K-K-P:</span> <b style="font-size:12px;">${ustaKkp?escapeHtml(ustaKkp):'—'}</b>
               <span style="float:right;font-weight:700;font-size:13px;">${vM3.toFixed(3)} m³ <span style="font-weight:400;color:var(--muted);font-size:12px;">(${vAdet} adet${vFireM3>0?', fire '+vFireM3.toFixed(3)+' m³':''})</span></span>
+              <div style="margin-left:32px;margin-top:3px;font-size:11.5px;color:var(--muted);">Tutkal — beklenen: <b>${vBeklenenTutkal.toFixed(1)} kg</b>${vGercekTutkal!=null ? ` · gerçek: <b>${vGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${vFarkTutkal>0?'#b23b2e':'#2e7d32'};">${vFarkTutkal>0?'+':''}${vFarkTutkal.toFixed(1)} kg</b>` : ' · (bu vardiya için tutkal kaydı yok)'}</div>
             </td>
           </tr>
           ${acik ? satirlar.map(r=>`<tr style="background:${vardiyaRenk(vNo)};">
@@ -1291,6 +1298,7 @@
             <tr><td colspan="9" style="font-weight:800;font-size:14px;background:var(--amber);color:#1c1f22;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</td></tr>
             ${vardiyaBloklari}
             <tr><td colspan="4" style="text-align:right;font-weight:700;padding-top:10px;">Gün toplamı:</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunAdet}</td><td></td><td class="mono" style="font-weight:700;padding-top:10px;">${gunFireM3.toFixed(3)}</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunM3.toFixed(3)}</td><td></td></tr>
+            <tr><td colspan="9" style="text-align:right;padding-top:4px;font-size:12px;color:var(--muted);">Tutkal — beklenen: <b>${gunBeklenenTutkal.toFixed(1)} kg</b>${gunGercekTutkalVarMi ? ` · gerçek: <b>${gunGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${(gunGercekTutkal-gunBeklenenTutkal)>0?'#b23b2e':'#2e7d32'};">${(gunGercekTutkal-gunBeklenenTutkal)>0?'+':''}${(gunGercekTutkal-gunBeklenenTutkal).toFixed(1)} kg</b>` : ' · (bu gün için tutkal kaydı yok)'}</td></tr>
           </tbody>
         </table>
       </div>`;
@@ -1533,6 +1541,40 @@
     const sayim = {};
     (r.dizilim||[]).forEach(k => { sayim[k] = (sayim[k]||0)+1; });
     return sayim;
+  }
+
+  function tutkalliKatSayisi(kalinlik, yapilis){
+    const r = receteBul(kalinlik, yapilis);
+    if(!r) return null;
+    return r.tutkalli_kat_sayisi!=null ? r.tutkalli_kat_sayisi : Math.floor((r.kat_sayisi||0)/2);
+  }
+
+  function papelAlaniM2(){
+    const eni = parseFloat(ayar('papel_eni_cm',180))||180;
+    const boyu = parseFloat(ayar('papel_boyu_cm',230))||230;
+    return (eni*boyu)/10000;
+  }
+
+  function hedefTutkalGramM2(){
+    const gram = parseFloat(ayar('hedef_viskozite_gram',32))||32;
+    return gram/0.10; // 20x50cm = 0.10 m2 referans parça
+  }
+
+  function beklenenTutkalKg(satirlar){
+    const alan = papelAlaniM2();
+    const gramM2 = hedefTutkalGramM2();
+    let toplamGram = 0;
+    (satirlar||[]).forEach(r => {
+      const tKat = tutkalliKatSayisi(r.kalinlik);
+      if(!tKat) return;
+      toplamGram += alan * (r.adet||0) * tKat * gramM2;
+    });
+    return toplamGram/1000;
+  }
+
+  function gercekTutkalKg(tarih, vardiya){
+    const kayit = (state.tutkal||[]).find(t => t.tarih===tarih && t.vardiya===vardiya);
+    return kayit ? (kayit.harcanan||0) : null;
   }
 
   function papelUretilenHesapla(){
@@ -2079,11 +2121,12 @@
       </div>
       <div class="card">
         <table>
-          <thead><tr><th>Kalınlık</th><th>Yapılış</th><th>Kat Sayısı</th><th>Dizilim</th><th></th></tr></thead>
+          <thead><tr><th>Kalınlık</th><th>Yapılış</th><th>Kat Sayısı</th><th>Tutkallı</th><th>Dizilim</th><th></th></tr></thead>
           <tbody>${receteler.map(r=>`<tr>
             <td class="mono">${r.kalinlik} mm</td>
             <td class="mono">${r.yapilis||'Standart'}</td>
             <td class="mono">${r.kat_sayisi}</td>
+            <td class="mono">${r.tutkalli_kat_sayisi!=null?r.tutkalli_kat_sayisi:'—'}</td>
             <td class="mono">${(r.dizilim||[]).join(' + ')}</td>
             <td>${rol==='admin' ? `<button class="row-btn" data-action="recete-duzenle" data-kalinlik="${r.kalinlik}" data-yapilis="${r.yapilis||'Standart'}">Düzenle</button>` : ''}</td>
           </tr>`).join('')}</tbody>
@@ -2619,6 +2662,8 @@
               </div>
               <div class="field full"><label>Dizilim (virgülle ayır, ör: 1.2, 2.1, 2.1, 2.1, 2.1, 2.1, 1.2)</label><textarea name="dizilim" rows="3" required>${(r.dizilim||[]).join(', ')}</textarea>
               <div class="hint">Kat sayısı otomatik hesaplanır, tek sayı olmalı.</div></div>
+              <div class="field full"><label>Tutkallı Kat Sayısı</label><input type="number" step="1" min="0" name="tutkalli_kat_sayisi" required value="${r.tutkalli_kat_sayisi!=null?r.tutkalli_kat_sayisi:''}">
+              <div class="hint">Tutkal sürülen (Excel'de sarı işaretli) katman sayısı — genelde çift sıradaki ara katlar.</div></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -2637,6 +2682,10 @@
               <div class="field full"><label>Kavak Yoğunluğu (kg/m³)</label><input type="number" step="any" min="0" name="kavak_yogunluk_kg_m3" required value="${ayar('kavak_yogunluk_kg_m3',730)}"></div>
               <div class="field full"><label>Soyma Verimi (%)</label><input type="number" step="any" min="0" max="100" name="soyma_verimi_yuzde" required value="${ayar('soyma_verimi_yuzde',55)}"></div>
               <div class="field full"><label>Hedef Günlük Kontraplak Üretimi (m³)</label><input type="number" step="any" min="0" name="hedef_gunluk_kontraplak_m3" required value="${ayar('hedef_gunluk_kontraplak_m3',30)}"></div>
+              <div class="field full"><label>Papel Eni (cm)</label><input type="number" step="any" min="0" name="papel_eni_cm" required value="${ayar('papel_eni_cm',180)}"></div>
+              <div class="field full"><label>Papel Boyu (cm)</label><input type="number" step="any" min="0" name="papel_boyu_cm" required value="${ayar('papel_boyu_cm',230)}"></div>
+              <div class="field full"><label>Hedef Viskozite (20×50cm parça, gram)</label><input type="number" step="any" min="0" name="hedef_viskozite_gram" required value="${ayar('hedef_viskozite_gram',32)}">
+              <div class="hint">Tutkal sarfiyat hesabında kullanılır: 320 gr/m² = 32gr / 0,10m²</div></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -2704,6 +2753,11 @@
     else if(action==='tab'){
       state.activeTab = t.dataset.tab; state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
+      if(state.activeTab==='uretim_takip'){
+        if(!state.tutkalLoaded) loadTutkal(true);
+        if(!state.receteLoaded) loadReceteler(true);
+        if(!state.ayarlarLoaded) loadAyarlar(true);
+      }
       if(state.activeTab==='kalan_tutkal' && !state.tutkalLoaded){ loadTutkal(true); }
       if(state.activeTab==='envanter' && !state.envanterLoaded){ loadEnvanter(true); }
       if(['mob_giyotin','mob_dis_papel','mob_pres','mob_cnc','mob_zimpara_fitil','mob_kapasite','mob_cizimler'].includes(state.activeTab)){
@@ -3377,8 +3431,10 @@
       const kalinlik = parseFloat(f.kalinlik.value);
       const yapilis = f.yapilis.value;
       const dizilim = f.dizilim.value.split(',').map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+      const tutkalliKatSayisiDeger = parseInt(f.tutkalli_kat_sayisi.value);
       const { error } = await sb.from('kontraplak_receteleri').upsert({
         kalinlik, yapilis, kat_sayisi: dizilim.length, dizilim,
+        tutkalli_kat_sayisi: isNaN(tutkalliKatSayisiDeger) ? Math.floor(dizilim.length/2) : tutkalliKatSayisiDeger,
         updated_at: new Date().toISOString(), updated_by: state.user.id
       }, { onConflict: 'kalinlik,yapilis' });
       state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Reçete kaydedildi.'};
@@ -3392,7 +3448,10 @@
       const guncellemeler = [
         { anahtar:'kavak_yogunluk_kg_m3', deger: parseFloat(f.kavak_yogunluk_kg_m3.value) },
         { anahtar:'soyma_verimi_yuzde', deger: parseFloat(f.soyma_verimi_yuzde.value) },
-        { anahtar:'hedef_gunluk_kontraplak_m3', deger: parseFloat(f.hedef_gunluk_kontraplak_m3.value) }
+        { anahtar:'hedef_gunluk_kontraplak_m3', deger: parseFloat(f.hedef_gunluk_kontraplak_m3.value) },
+        { anahtar:'papel_eni_cm', deger: parseFloat(f.papel_eni_cm.value) },
+        { anahtar:'papel_boyu_cm', deger: parseFloat(f.papel_boyu_cm.value) },
+        { anahtar:'hedef_viskozite_gram', deger: parseFloat(f.hedef_viskozite_gram.value) }
       ];
       let hata = null;
       for(const g of guncellemeler){
