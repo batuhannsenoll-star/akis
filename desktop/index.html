@@ -2519,6 +2519,8 @@
     if(m.type==='tutkal-kaydi'){
       const r = m.kayit || {};
       const isEdit = !!m.kayit;
+      const varsayilanTarih = r.tarih || m.onTarih || todayStr();
+      const varsayilanVardiya = r.vardiya || m.onVardiya || null;
       const sonKayit = state.tutkal.slice().sort((a,b)=>(b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya))[0];
       const dundenKalan = isEdit ? r.dunden_kalan : (sonKayit ? sonKayit.kalan : 0);
       return `<div class="overlay" data-action="overlay-close"><div class="modal">
@@ -2528,11 +2530,11 @@
           <form id="tutkal-kaydi-form" data-dunden="${dundenKalan}">
             <div class="form-grid">
               <div class="field full" style="display:flex;align-items:center;gap:8px;"><label style="display:flex;align-items:center;gap:6px;font-weight:600;"><input type="checkbox" name="calisma_yok" ${r.calisma_yok?'checked':''} style="width:auto;"> Bu vardiyada çalışma / tutkal kullanımı olmadı</label></div>
-              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
+              <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${varsayilanTarih}"></div>
               <div class="field"><label>Vardiya</label><select name="vardiya">
-                <option value="1" ${r.vardiya===1?'selected':''}>1</option>
-                <option value="2" ${r.vardiya===2?'selected':''}>2</option>
-                <option value="3" ${r.vardiya===3?'selected':''}>3</option>
+                <option value="1" ${varsayilanVardiya===1?'selected':''}>1</option>
+                <option value="2" ${varsayilanVardiya===2?'selected':''}>2</option>
+                <option value="3" ${varsayilanVardiya===3?'selected':''}>3</option>
               </select></div>
               <div class="field"><label>Alt</label><input type="number" step="any" name="alt" ${r.calisma_yok?'disabled':'required'} value="${r.alt!=null?r.alt:''}"></div>
               <div class="field"><label>Üst</label><input type="number" step="any" name="ust" ${r.calisma_yok?'disabled':'required'} value="${r.ust!=null?r.ust:''}"></div>
@@ -3236,13 +3238,18 @@
         kalan: Math.round(hesap.kalan*1000)/1000
       };
       let error;
-      if(state.modal.kayit){
+      const isEditKaydi = !!state.modal.kayit;
+      if(isEditKaydi){
         ({ error } = await sb.from('tutkal_takip').update(Object.assign({}, data, { updated_at:new Date().toISOString() })).eq('id', state.modal.kayit.id));
       }else{
         ({ error } = await sb.from('tutkal_takip').insert([Object.assign({}, data, { created_by: state.user.id })]));
       }
       state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Tutkal kaydı kaydedildi.'};
-      state.modal = null;
+      if(!error && !isEditKaydi && data.vardiya < 3){
+        state.modal = { type:'tutkal-kaydi', kayit:null, onTarih:data.tarih, onVardiya:data.vardiya+1 };
+      }else{
+        state.modal = null;
+      }
       await loadTutkal(true);
     }
 
