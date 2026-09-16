@@ -418,7 +418,10 @@
     const { data, error } = await sb.from('kontraplak_receteleri').select('*');
     if(!error){
       state.kontraplakReceteleri = {};
-      (data||[]).forEach(r => state.kontraplakReceteleri[r.kalinlik] = r);
+      (data||[]).forEach(r => {
+        if(!state.kontraplakReceteleri[r.kalinlik]) state.kontraplakReceteleri[r.kalinlik] = {};
+        state.kontraplakReceteleri[r.kalinlik][r.yapilis||'Standart'] = r;
+      });
     }
     state.receteLoaded = true;
     if(!silent) render();
@@ -1518,8 +1521,14 @@
     return sonuc;
   }
 
-  function receteKatSayilari(kalinlik){
-    const r = state.kontraplakReceteleri[kalinlik];
+  function receteBul(kalinlik, yapilis){
+    const grup = state.kontraplakReceteleri[kalinlik];
+    if(!grup) return null;
+    return grup[yapilis||'Standart'] || grup['Standart'] || Object.values(grup)[0] || null;
+  }
+
+  function receteKatSayilari(kalinlik, yapilis){
+    const r = receteBul(kalinlik, yapilis);
     if(!r) return null;
     const sayim = {};
     (r.dizilim||[]).forEach(k => { sayim[k] = (sayim[k]||0)+1; });
@@ -2061,19 +2070,22 @@
   }
 
   function renderReceteTab(rol){
-    const receteler = Object.values(state.kontraplakReceteleri).sort((a,b)=>a.kalinlik-b.kalinlik);
+    const receteler = Object.values(state.kontraplakReceteleri)
+      .flatMap(grup => Object.values(grup))
+      .sort((a,b)=> a.kalinlik-b.kalinlik || String(a.yapilis).localeCompare(String(b.yapilis)));
     return `
       <div class="filters">
         ${rol==='admin' ? `<button class="row-btn primary" data-action="recete-ekle" style="margin-left:auto;">+ Yeni Reçete</button>` : ''}
       </div>
       <div class="card">
         <table>
-          <thead><tr><th>Kalınlık</th><th>Kat Sayısı</th><th>Dizilim</th><th></th></tr></thead>
+          <thead><tr><th>Kalınlık</th><th>Yapılış</th><th>Kat Sayısı</th><th>Dizilim</th><th></th></tr></thead>
           <tbody>${receteler.map(r=>`<tr>
             <td class="mono">${r.kalinlik} mm</td>
+            <td class="mono">${r.yapilis||'Standart'}</td>
             <td class="mono">${r.kat_sayisi}</td>
             <td class="mono">${(r.dizilim||[]).join(' + ')}</td>
-            <td>${rol==='admin' ? `<button class="row-btn" data-action="recete-duzenle" data-kalinlik="${r.kalinlik}">Düzenle</button>` : ''}</td>
+            <td>${rol==='admin' ? `<button class="row-btn" data-action="recete-duzenle" data-kalinlik="${r.kalinlik}" data-yapilis="${r.yapilis||'Standart'}">Düzenle</button>` : ''}</td>
           </tr>`).join('')}</tbody>
         </table>
       </div>
@@ -2598,6 +2610,13 @@
           <form id="recete-kaydi-form">
             <div class="form-grid">
               <div class="field full"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${r.kalinlik||''}" ${isEdit?'readonly':''}></div>
+              <div class="field full"><label>Yapılış</label>
+                <select name="yapilis" required ${isEdit?'disabled':''}>
+                  <option value="Standart" ${(r.yapilis||'Standart')==='Standart'?'selected':''}>Standart</option>
+                  <option value="Martur" ${r.yapilis==='Martur'?'selected':''}>Martur</option>
+                </select>
+                ${isEdit?`<div class="hint">Yapılış sonradan değiştirilemez, farklı bir yapılış için yeni reçete ekleyin.</div>`:''}
+              </div>
               <div class="field full"><label>Dizilim (virgülle ayır, ör: 1.2, 2.1, 2.1, 2.1, 2.1, 2.1, 1.2)</label><textarea name="dizilim" rows="3" required>${(r.dizilim||[]).join(', ')}</textarea>
               <div class="hint">Kat sayısı otomatik hesaplanır, tek sayı olmalı.</div></div>
             </div>
@@ -2772,7 +2791,7 @@
       }
     }
     else if(action==='recete-ekle'){ state.modal = { type:'recete-kaydi', kayit:null }; render(); }
-    else if(action==='recete-duzenle'){ const r = state.kontraplakReceteleri[t.dataset.kalinlik]; state.modal = { type:'recete-kaydi', kayit:r }; render(); }
+    else if(action==='recete-duzenle'){ const r = receteBul(parseFloat(t.dataset.kalinlik), t.dataset.yapilis); state.modal = { type:'recete-kaydi', kayit:r }; render(); }
     else if(action==='ayarlar-duzenle'){ state.modal = { type:'ayarlar' }; render(); }
     else if(action==='env-view'){
       state.envanterKategori = t.dataset.view; state.toast=null;
@@ -3356,11 +3375,12 @@
     else if(e.target.id==='recete-kaydi-form'){
       const f = e.target;
       const kalinlik = parseFloat(f.kalinlik.value);
+      const yapilis = f.yapilis.value;
       const dizilim = f.dizilim.value.split(',').map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
       const { error } = await sb.from('kontraplak_receteleri').upsert({
-        kalinlik, kat_sayisi: dizilim.length, dizilim,
+        kalinlik, yapilis, kat_sayisi: dizilim.length, dizilim,
         updated_at: new Date().toISOString(), updated_by: state.user.id
-      }, { onConflict: 'kalinlik' });
+      }, { onConflict: 'kalinlik,yapilis' });
       state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Reçete kaydedildi.'};
       state.modal = null;
       await loadReceteler(true);
