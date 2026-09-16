@@ -1606,6 +1606,33 @@
     return (eni*boyu)/10000;
   }
 
+  function telliKurutmaHesap(){
+    // Telli kurutma: papel, 260cm'lik tel halı üzerinde ilerlerken, bir sonraki papelin verilebilmesi
+    // için önceki papelin "boy" (ilerleme yönündeki) uzunluğu kadar ilerlemesi beklenir.
+    // "230 papel" (eni 230, boyu 180) verildiğinde beklenen ilerleme = papel_eni_cm (180).
+    // "180 papel" (eni 180, boyu 230) verildiğinde beklenen ilerleme = papel_boyu_cm (230).
+    // Referans kalibrasyon: belirli bir hızda X cm ilerlemesi Y saniye sürer; devir süresi buna göre oranlanır.
+    const refMesafe = parseFloat(ayar('kurutma_referans_mesafe_cm',180))||180;
+    const refSure = parseFloat(ayar('kurutma_referans_sure_sn',26))||26;
+    const eni = parseFloat(ayar('papel_eni_cm',180))||180;
+    const boyu = parseFloat(ayar('papel_boyu_cm',230))||230;
+    const alan = papelAlaniM2();
+    const cycle230 = refSure * (eni/refMesafe);
+    const cycle180 = refSure * (boyu/refMesafe);
+    const saatte230 = cycle230>0 ? 3600/cycle230 : 0;
+    const saatte180 = cycle180>0 ? 3600/cycle180 : 0;
+    const gunSaat = 24; // 3 vardiya × 8 saat
+    const vardiyaSaat = 8;
+    const farkYuzde = saatte180>0 ? ((saatte230-saatte180)/saatte180)*100 : 0;
+    return {
+      alan, cycle230, cycle180, saatte230, saatte180,
+      vardiya230: saatte230*vardiyaSaat, vardiya180: saatte180*vardiyaSaat,
+      gunde230: saatte230*gunSaat, gunde180: saatte180*gunSaat,
+      m2Gunde230: saatte230*gunSaat*alan, m2Gunde180: saatte180*gunSaat*alan,
+      farkYuzde
+    };
+  }
+
   function hedefTutkalGramM2(){
     const gram = parseFloat(ayar('hedef_viskozite_gram',32))||32;
     return gram/0.10; // 20x50cm = 0.10 m2 referans parça
@@ -2250,6 +2277,21 @@
       const key = m.key;
       const a = state.hatKapasiteleri[key] || {};
       const ad = HAT_ADLAR[key] || key;
+      const telliKurutmaBlok = key==='telli_kurutma' ? (() => {
+        const h = telliKurutmaHesap();
+        return `
+          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
+            <div class="hint" style="margin-bottom:8px;font-weight:700;text-transform:none;letter-spacing:0;">230 ile 180 papel kıyaslaması (otomatik hesaplanır)</div>
+            <div class="meta-row"><span>230 papel — devir süresi</span><b>${h.cycle230.toFixed(1)} sn/adet</b></div>
+            <div class="meta-row"><span>180 papel — devir süresi</span><b>${h.cycle180.toFixed(1)} sn/adet</b></div>
+            <div class="meta-row"><span>230 ile vardiya (8sa) üretimi</span><b>${h.vardiya230.toFixed(0)} adet</b></div>
+            <div class="meta-row"><span>180 ile vardiya (8sa) üretimi</span><b>${h.vardiya180.toFixed(0)} adet</b></div>
+            <div class="meta-row"><span>230 ile günlük (24sa) üretim</span><b>${h.gunde230.toFixed(0)} adet · ${h.m2Gunde230.toFixed(0)} m²</b></div>
+            <div class="meta-row"><span>180 ile günlük (24sa) üretim</span><b>${h.gunde180.toFixed(0)} adet · ${h.m2Gunde180.toFixed(0)} m²</b></div>
+            <p class="hint" style="margin-top:10px;line-height:1.5;text-transform:none;letter-spacing:0;font-size:12.5px;">230 papel, 180'e göre makineyi <b>%${h.farkYuzde.toFixed(1)} daha verimli</b> kullanır — çünkü 230'un ilerleme mesafesi (${(parseFloat(ayar('papel_eni_cm',180))||180)} cm) 180'inkinden (${(parseFloat(ayar('papel_boyu_cm',230))||230)} cm) daha kısa, bu yüzden ardışık papeller arasında daha az beklenir. Aynı 24 saatte 230 ile yaklaşık <b>${(h.gunde230-h.gunde180).toFixed(0)} adet daha fazla</b> papel kurutulur. Bu hesap Ayarlar'daki kurutma referans mesafe/süre ve papel ölçüleri değiştikçe otomatik güncellenir.</p>
+          </div>
+        `;
+      })() : '';
       if(!canEdit(rol)){
         const birim = a.gorunur_birim || 'ikisi';
         return `<div class="overlay" data-action="overlay-close"><div class="modal">
@@ -2259,6 +2301,7 @@
             ${(birim==='adet'||birim==='ikisi') ? `<div class="meta-row"><span>Kapasite (adet/gün)</span><b>${a.kapasite_adet!=null?a.kapasite_adet:'—'}</b></div>` : ''}
             ${a.notlar ? `<div class="meta-row"><span>Not</span><b>${escapeHtml(a.notlar)}</b></div>` : ''}
             ${(!a.kapasite_m3 && !a.kapasite_adet) ? `<p class="hint">Bu aşama için henüz kapasite bilgisi girilmemiş.</p>` : ''}
+            ${telliKurutmaBlok}
           </div>
           <div class="modal-foot"><button class="btn" data-action="close-modal">Kapat</button></div>
         </div></div>`;
@@ -2285,6 +2328,7 @@
               <button type="button" class="btn" data-action="close-modal">Vazgeç</button>
             </div>
           </form>
+          ${telliKurutmaBlok}
         </div>
       </div></div>`;
     }
@@ -2753,6 +2797,9 @@
               <div class="field full"><label>Karışım — Un (kg)</label><input type="number" step="any" min="0" name="karisim_un_kg" required value="${ayar('karisim_un_kg',45)}"></div>
               <div class="field full"><label>Karışım — Su (litre)</label><input type="number" step="any" min="0" name="karisim_su_litre" required value="${ayar('karisim_su_litre',40)}">
               <div class="hint">Tutkallama karışımının reçetesi (ham tutkal + un + su). Beklenen tutkal hesabı, sürülen karışım ağırlığını bu orana göre ham tutkal karşılığına çevirir.</div></div>
+              <div class="field full"><label>Kurutma Referans Mesafe (cm)</label><input type="number" step="any" min="0" name="kurutma_referans_mesafe_cm" required value="${ayar('kurutma_referans_mesafe_cm',180)}"></div>
+              <div class="field full"><label>Kurutma Referans Süre (saniye)</label><input type="number" step="any" min="0" name="kurutma_referans_sure_sn" required value="${ayar('kurutma_referans_sure_sn',26)}">
+              <div class="hint">Telli kurutma makinesi bu hızda bu mesafeyi bu sürede alır (örn. 180 cm / 26 sn). 230/180 papel devir süresi hesabı buna göre yapılır.</div></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -3536,7 +3583,9 @@
         { anahtar:'hedef_viskozite_gram', deger: parseFloat(f.hedef_viskozite_gram.value) },
         { anahtar:'karisim_ham_tutkal_kg', deger: parseFloat(f.karisim_ham_tutkal_kg.value) },
         { anahtar:'karisim_un_kg', deger: parseFloat(f.karisim_un_kg.value) },
-        { anahtar:'karisim_su_litre', deger: parseFloat(f.karisim_su_litre.value) }
+        { anahtar:'karisim_su_litre', deger: parseFloat(f.karisim_su_litre.value) },
+        { anahtar:'kurutma_referans_mesafe_cm', deger: parseFloat(f.kurutma_referans_mesafe_cm.value) },
+        { anahtar:'kurutma_referans_sure_sn', deger: parseFloat(f.kurutma_referans_sure_sn.value) }
       ];
       let hata = null;
       for(const g of guncellemeler){
