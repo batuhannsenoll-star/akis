@@ -269,9 +269,16 @@
     state.user = user;
     const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
     state.profile = profile;
-    const mods = moduller(profile ? profile.rol : null);
-    state.modul = mods[0] || null;
-    state.activeTab = defaultTab(state.modul);
+    const rol = profile ? profile.rol : null;
+    const mods = moduller(rol);
+    if((rol==='admin'||rol==='patron'||rol==='vardiya_amiri') && mods.includes('uretim')){
+      state.modul = 'uretim';
+      state.activeTab = 'uretim_takip';
+      state.uretimTakipView = 'ozet';
+    } else {
+      state.modul = mods[0] || null;
+      state.activeTab = defaultTab(state.modul);
+    }
     await loadProfilesMap();
     await loadOrders();
     await loadHatKapasiteleri();
@@ -1009,6 +1016,10 @@
   };
 
   function kapasiteMetni(key, rol){
+    if(key==='telli_kurutma'){
+      const h = telliKurutmaHesap();
+      return `230: ${h.m3Gunde230.toFixed(1)} m³ · 180: ${h.m3Gunde180.toFixed(1)} m³`;
+    }
     const a = state.hatKapasiteleri[key];
     if(!a) return '';
     const birim = canEdit(rol) ? 'ikisi' : (a.gorunur_birim||'ikisi');

@@ -277,9 +277,16 @@
     state.user = user;
     const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
     state.profile = profile;
-    const mods = moduller(profile ? profile.rol : null);
-    state.modul = mods[0] || null;
-    state.activeTab = defaultTab(state.modul);
+    const rol = profile ? profile.rol : null;
+    const mods = moduller(rol);
+    if((rol==='admin'||rol==='patron'||rol==='vardiya_amiri') && mods.includes('uretim')){
+      state.modul = 'uretim';
+      state.activeTab = 'uretim_takip';
+      state.uretimTakipView = 'ozet';
+    } else {
+      state.modul = mods[0] || null;
+      state.activeTab = defaultTab(state.modul);
+    }
     await loadProfilesMap();
     await loadOrders();
     await loadHatKapasiteleri();
@@ -1013,6 +1020,10 @@
   };
 
   function kapasiteMetni(key, rol){
+    if(key==='telli_kurutma'){
+      const h = telliKurutmaHesap();
+      return `230: ${h.m3Gunde230.toFixed(1)} m³ · 180: ${h.m3Gunde180.toFixed(1)} m³`;
+    }
     const a = state.hatKapasiteleri[key];
     if(!a) return '';
     const birim = canEdit(rol) ? 'ikisi' : (a.gorunur_birim||'ikisi');
@@ -1621,7 +1632,9 @@
     const refSure = parseFloat(ayar('kurutma_referans_sure_sn',26))||26;
     const eni = parseFloat(ayar('papel_eni_cm',180))||180;
     const boyu = parseFloat(ayar('papel_boyu_cm',230))||230;
+    const kalinlikMm = parseFloat(ayar('papel_kalinlik_mm',2.1))||2.1;
     const alan = papelAlaniM2();
+    const hacimM3 = alan * (kalinlikMm/1000);
     const cycle230 = refSure * (eni/refMesafe);
     const cycle180 = refSure * (boyu/refMesafe);
     const saatte230 = cycle230>0 ? 3600/cycle230 : 0;
@@ -1629,11 +1642,12 @@
     const gunSaat = 24; // 3 vardiya × 8 saat
     const vardiyaSaat = 8;
     const farkYuzde = saatte180>0 ? ((saatte230-saatte180)/saatte180)*100 : 0;
+    const gunde230 = saatte230*gunSaat, gunde180 = saatte180*gunSaat;
     return {
-      alan, cycle230, cycle180, saatte230, saatte180,
+      alan, hacimM3, cycle230, cycle180, saatte230, saatte180,
       vardiya230: saatte230*vardiyaSaat, vardiya180: saatte180*vardiyaSaat,
-      gunde230: saatte230*gunSaat, gunde180: saatte180*gunSaat,
-      m2Gunde230: saatte230*gunSaat*alan, m2Gunde180: saatte180*gunSaat*alan,
+      gunde230, gunde180,
+      m3Gunde230: gunde230*hacimM3, m3Gunde180: gunde180*hacimM3,
       farkYuzde
     };
   }
@@ -2293,9 +2307,19 @@
             <div class="meta-row"><span>180 papel — devir süresi</span><b>${h.cycle180.toFixed(1)} sn/adet</b></div>
             <div class="meta-row"><span>230 ile vardiya (8sa) üretimi</span><b>${h.vardiya230.toFixed(0)} adet</b></div>
             <div class="meta-row"><span>180 ile vardiya (8sa) üretimi</span><b>${h.vardiya180.toFixed(0)} adet</b></div>
-            <div class="meta-row"><span>230 ile günlük (24sa) üretim</span><b>${h.gunde230.toFixed(0)} adet · ${h.m2Gunde230.toFixed(0)} m²</b></div>
-            <div class="meta-row"><span>180 ile günlük (24sa) üretim</span><b>${h.gunde180.toFixed(0)} adet · ${h.m2Gunde180.toFixed(0)} m²</b></div>
-            <p class="hint" style="margin-top:10px;line-height:1.5;text-transform:none;letter-spacing:0;font-size:12.5px;">230 papel, 180'e göre makineyi <b>%${h.farkYuzde.toFixed(1)} daha verimli</b> kullanır — çünkü 230'un ilerleme mesafesi (${(parseFloat(ayar('papel_eni_cm',180))||180)} cm) 180'inkinden (${(parseFloat(ayar('papel_boyu_cm',230))||230)} cm) daha kısa, bu yüzden ardışık papeller arasında daha az beklenir. Aynı 24 saatte 230 ile yaklaşık <b>${(h.gunde230-h.gunde180).toFixed(0)} adet daha fazla</b> papel kurutulur. Bu hesap Ayarlar'daki kurutma referans mesafe/süre ve papel ölçüleri değiştikçe otomatik güncellenir.</p>
+            <div style="display:flex;gap:12px;margin-top:12px;">
+              <div style="flex:1;text-align:center;padding:12px 8px;background:rgba(37,99,235,0.08);border-radius:10px;">
+                <div style="font-size:22px;font-weight:800;">230</div>
+                <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">Günlük Kapasite</div>
+                <div style="font-size:17px;font-weight:800;margin-top:2px;">${h.m3Gunde230.toFixed(1)} m³</div>
+              </div>
+              <div style="flex:1;text-align:center;padding:12px 8px;background:rgba(217,119,6,0.08);border-radius:10px;">
+                <div style="font-size:22px;font-weight:800;">180</div>
+                <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">Günlük Kapasite</div>
+                <div style="font-size:17px;font-weight:800;margin-top:2px;">${h.m3Gunde180.toFixed(1)} m³</div>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:10px;line-height:1.5;text-transform:none;letter-spacing:0;font-size:12.5px;">230 papel, 180'e göre makineyi <b>%${h.farkYuzde.toFixed(1)} daha verimli</b> kullanır — çünkü 230'un ilerleme mesafesi (${(parseFloat(ayar('papel_eni_cm',180))||180)} cm) 180'inkinden (${(parseFloat(ayar('papel_boyu_cm',230))||230)} cm) daha kısa, bu yüzden ardışık papeller arasında daha az beklenir. Aynı 24 saatte 230 ile yaklaşık <b>${(h.gunde230-h.gunde180).toFixed(0)} adet daha fazla</b> papel kurutulur (papel kalınlığı ${(parseFloat(ayar('papel_kalinlik_mm',2.1))||2.1)} mm kabulüyle). Bu hesap Ayarlar'daki kurutma referans mesafe/süre, papel ölçüleri ve kalınlığı değiştikçe otomatik güncellenir.</p>
           </div>
         `;
       })() : '';
@@ -2798,6 +2822,8 @@
               <div class="field full"><label>Hedef Günlük Kontraplak Üretimi (m³)</label><input type="number" step="any" min="0" name="hedef_gunluk_kontraplak_m3" required value="${ayar('hedef_gunluk_kontraplak_m3',30)}"></div>
               <div class="field full"><label>Papel Eni (cm)</label><input type="number" step="any" min="0" name="papel_eni_cm" required value="${ayar('papel_eni_cm',180)}"></div>
               <div class="field full"><label>Papel Boyu (cm)</label><input type="number" step="any" min="0" name="papel_boyu_cm" required value="${ayar('papel_boyu_cm',230)}"></div>
+              <div class="field full"><label>Papel Kalınlığı (mm)</label><input type="number" step="any" min="0" name="papel_kalinlik_mm" required value="${ayar('papel_kalinlik_mm',2.1)}">
+              <div class="hint">Telli kurutma kapasite kıyaslamasında m³ hesaplaması için kullanılır.</div></div>
               <div class="field full"><label>Hedef Viskozite (20×50cm parça, gram)</label><input type="number" step="any" min="0" name="hedef_viskozite_gram" required value="${ayar('hedef_viskozite_gram',32)}">
               <div class="hint">Tutkal sarfiyat hesabında kullanılır: 320 gr/m² = 32gr / 0,10m²</div></div>
               <div class="field full"><label>Karışım — Ham Tutkal (kg)</label><input type="number" step="any" min="0" name="karisim_ham_tutkal_kg" required value="${ayar('karisim_ham_tutkal_kg',200)}"></div>
@@ -3587,6 +3613,7 @@
         { anahtar:'hedef_gunluk_kontraplak_m3', deger: parseFloat(f.hedef_gunluk_kontraplak_m3.value) },
         { anahtar:'papel_eni_cm', deger: parseFloat(f.papel_eni_cm.value) },
         { anahtar:'papel_boyu_cm', deger: parseFloat(f.papel_boyu_cm.value) },
+        { anahtar:'papel_kalinlik_mm', deger: parseFloat(f.papel_kalinlik_mm.value) },
         { anahtar:'hedef_viskozite_gram', deger: parseFloat(f.hedef_viskozite_gram.value) },
         { anahtar:'karisim_ham_tutkal_kg', deger: parseFloat(f.karisim_ham_tutkal_kg.value) },
         { anahtar:'karisim_un_kg', deger: parseFloat(f.karisim_un_kg.value) },
