@@ -1275,7 +1275,7 @@
               <span style="margin-left:18px;color:var(--muted);font-size:12px;">Ç-K-P:</span> <b style="font-size:12px;">${ustaCkp?escapeHtml(ustaCkp):'—'}</b>
               <span style="margin-left:18px;color:var(--muted);font-size:12px;">K-K-P:</span> <b style="font-size:12px;">${ustaKkp?escapeHtml(ustaKkp):'—'}</b>
               <span style="float:right;font-weight:700;font-size:13px;">${vM3.toFixed(3)} m³ <span style="font-weight:400;color:var(--muted);font-size:12px;">(${vAdet} adet${vFireM3>0?', fire '+vFireM3.toFixed(3)+' m³':''})</span></span>
-              <div style="margin-left:32px;margin-top:3px;font-size:11.5px;color:var(--muted);">Tutkal — beklenen: <b>${vBeklenenTutkal.toFixed(1)} kg</b>${vGercekTutkal!=null ? ` · gerçek: <b>${vGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${vFarkTutkal>0?'#b23b2e':'#2e7d32'};">${vFarkTutkal>0?'+':''}${vFarkTutkal.toFixed(1)} kg</b>` : ' · (bu vardiya için tutkal kaydı yok)'}</div>
+              <div style="margin-left:32px;margin-top:3px;font-size:11.5px;color:var(--muted);">Tutkal (ham) — beklenen: <b>${vBeklenenTutkal.toFixed(1)} kg</b>${vGercekTutkal!=null ? ` · gerçek: <b>${vGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${vFarkTutkal>0?'#b23b2e':'#2e7d32'};">${vFarkTutkal>0?'+':''}${vFarkTutkal.toFixed(1)} kg</b>` : ' · (bu vardiya için tutkal kaydı yok)'}</div>
             </td>
           </tr>
           ${acik ? satirlar.map(r=>`<tr style="background:${vardiyaRenk(vNo)};">
@@ -1299,7 +1299,7 @@
             <tr><td colspan="9" style="font-weight:800;font-size:14px;background:var(--amber);color:#1c1f22;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</td></tr>
             ${vardiyaBloklari}
             <tr><td colspan="4" style="text-align:right;font-weight:700;padding-top:10px;">Gün toplamı:</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunAdet}</td><td></td><td class="mono" style="font-weight:700;padding-top:10px;">${gunFireM3.toFixed(3)}</td><td class="mono" style="font-weight:700;padding-top:10px;">${gunM3.toFixed(3)}</td><td></td></tr>
-            <tr><td colspan="9" style="text-align:right;padding-top:4px;font-size:12px;color:var(--muted);">Tutkal — beklenen: <b>${gunBeklenenTutkal.toFixed(1)} kg</b>${gunGercekTutkalVarMi ? ` · gerçek: <b>${gunGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${(gunGercekTutkal-gunBeklenenTutkal)>0?'#b23b2e':'#2e7d32'};">${(gunGercekTutkal-gunBeklenenTutkal)>0?'+':''}${(gunGercekTutkal-gunBeklenenTutkal).toFixed(1)} kg</b>` : ' · (bu gün için tutkal kaydı yok)'}</td></tr>
+            <tr><td colspan="9" style="text-align:right;padding-top:4px;font-size:12px;color:var(--muted);">Tutkal (ham) — beklenen: <b>${gunBeklenenTutkal.toFixed(1)} kg</b>${gunGercekTutkalVarMi ? ` · gerçek: <b>${gunGercekTutkal.toFixed(1)} kg</b> · fark: <b style="color:${(gunGercekTutkal-gunBeklenenTutkal)>0?'#b23b2e':'#2e7d32'};">${(gunGercekTutkal-gunBeklenenTutkal)>0?'+':''}${(gunGercekTutkal-gunBeklenenTutkal).toFixed(1)} kg</b>` : ' · (bu gün için tutkal kaydı yok)'}</td></tr>
           </tbody>
         </table>
       </div>`;
@@ -1561,6 +1561,15 @@
     return gram/0.10; // 20x50cm = 0.10 m2 referans parça
   }
 
+  function hamTutkalOrani(){
+    // Viskozite testinde papele sürülen karışımın (ham tutkal + un + su) içindeki ham tutkal oranı
+    const ham = parseFloat(ayar('karisim_ham_tutkal_kg',200))||200;
+    const un = parseFloat(ayar('karisim_un_kg',45))||45;
+    const su = parseFloat(ayar('karisim_su_litre',40))||40;
+    const toplam = ham+un+su;
+    return toplam>0 ? (ham/toplam) : 1;
+  }
+
   function beklenenTutkalKg(satirlar){
     const alan = papelAlaniM2();
     const gramM2 = hedefTutkalGramM2();
@@ -1570,7 +1579,8 @@
       if(!tKat) return;
       toplamGram += alan * (parseFloat(r.adet)||0) * tKat * gramM2;
     });
-    return toplamGram/1000;
+    const karisimKg = toplamGram/1000; // sürülen karışımın (ham+un+su) toplam ağırlığı
+    return karisimKg * hamTutkalOrani(); // ham tutkal_takip kayıtlarıyla kıyaslanabilmesi için ham tutkal karşılığına çevrilir
   }
 
   function gercekTutkalKg(tarih, vardiya){
@@ -2686,6 +2696,10 @@
               <div class="field full"><label>Papel Boyu (cm)</label><input type="number" step="any" min="0" name="papel_boyu_cm" required value="${ayar('papel_boyu_cm',230)}"></div>
               <div class="field full"><label>Hedef Viskozite (20×50cm parça, gram)</label><input type="number" step="any" min="0" name="hedef_viskozite_gram" required value="${ayar('hedef_viskozite_gram',32)}">
               <div class="hint">Tutkal sarfiyat hesabında kullanılır: 320 gr/m² = 32gr / 0,10m²</div></div>
+              <div class="field full"><label>Karışım — Ham Tutkal (kg)</label><input type="number" step="any" min="0" name="karisim_ham_tutkal_kg" required value="${ayar('karisim_ham_tutkal_kg',200)}"></div>
+              <div class="field full"><label>Karışım — Un (kg)</label><input type="number" step="any" min="0" name="karisim_un_kg" required value="${ayar('karisim_un_kg',45)}"></div>
+              <div class="field full"><label>Karışım — Su (litre)</label><input type="number" step="any" min="0" name="karisim_su_litre" required value="${ayar('karisim_su_litre',40)}">
+              <div class="hint">Tutkallama karışımının reçetesi (ham tutkal + un + su). Beklenen tutkal hesabı, sürülen karışım ağırlığını bu orana göre ham tutkal karşılığına çevirir.</div></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -3456,7 +3470,10 @@
         { anahtar:'hedef_gunluk_kontraplak_m3', deger: parseFloat(f.hedef_gunluk_kontraplak_m3.value) },
         { anahtar:'papel_eni_cm', deger: parseFloat(f.papel_eni_cm.value) },
         { anahtar:'papel_boyu_cm', deger: parseFloat(f.papel_boyu_cm.value) },
-        { anahtar:'hedef_viskozite_gram', deger: parseFloat(f.hedef_viskozite_gram.value) }
+        { anahtar:'hedef_viskozite_gram', deger: parseFloat(f.hedef_viskozite_gram.value) },
+        { anahtar:'karisim_ham_tutkal_kg', deger: parseFloat(f.karisim_ham_tutkal_kg.value) },
+        { anahtar:'karisim_un_kg', deger: parseFloat(f.karisim_un_kg.value) },
+        { anahtar:'karisim_su_litre', deger: parseFloat(f.karisim_su_litre.value) }
       ];
       let hata = null;
       for(const g of guncellemeler){
