@@ -75,8 +75,8 @@
   .modul-btn.active{background:var(--amber);color:#1c1f22;font-weight:600;}
   .switch-btn:hover{border-color:#fff;color:#fff;}
 
-  .tabs{display:flex;gap:4px;padding:0 24px;background:var(--shell-2);}
-  .tab{padding:12px 16px;color:#b8bcc0;font-size:14px;font-weight:500;border-bottom:2px solid transparent;}
+  .tabs{display:flex;gap:4px;padding:0 24px;background:var(--shell-2);overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .tab{padding:12px 16px;color:#b8bcc0;font-size:14px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap;flex:0 0 auto;}
   .tab.active{color:#fff;border-bottom-color:var(--amber);}
   .tab:hover{color:#fff;}
 
@@ -93,7 +93,7 @@
   .search{margin-left:auto;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;min-width:220px;background:var(--panel);}
 
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
-  table{width:100%;border-collapse:collapse;font-size:13px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;}
   thead th{text-align:left;padding:10px 12px;background:#FAF9F6;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line);white-space:nowrap;}
   tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
   tbody tr:last-child td{border-bottom:none;}
@@ -139,6 +139,18 @@
   .meta-row:last-child{border-bottom:none;}
   .loading{padding:60px;text-align:center;color:var(--muted);}
   .asama-node:hover rect{opacity:.85;}
+
+  @media (max-width:680px){
+    header{padding:12px 14px;}
+    .brand h1{font-size:17px;}
+    .tabs{padding:0 14px;}
+    main{padding:12px;}
+    .form-grid{grid-template-columns:1fr;}
+    .form-card{padding:16px;}
+    .modal-body{padding:16px;}
+    .search{min-width:0;width:100%;margin-left:0;}
+    .summary{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
+  }
 </style>
 </head>
 <body>
