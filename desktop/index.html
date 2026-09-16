@@ -1408,19 +1408,20 @@
     const toplamHarcanan = gercekKayitlar.reduce((s,r)=>s+(parseFloat(r.harcanan)||0),0);
     const ortalamaVardiyaHarcanan = gercekKayitlar.length ? toplamHarcanan/gercekKayitlar.length : 0;
     const kacVardiyaGider = ortalamaVardiyaHarcanan>0 ? kalan/ortalamaVardiyaHarcanan : null;
-    return { son, kalan, ortalamaVardiyaHarcanan, kacVardiyaGider, kayitSayisi: gercekKayitlar.length };
+    const kacGunGider = kacVardiyaGider!=null ? kacVardiyaGider/3 : null;
+    return { son, kalan, ortalamaVardiyaHarcanan, kacVardiyaGider, kacGunGider, kayitSayisi: gercekKayitlar.length };
   }
 
   function renderTutkalKalanOzet(){
     const o = hesaplaKalanTutkalOzet();
     return `
       <div class="summary">
-        <div class="stat"><div class="num">${o.kalan.toFixed(0)}</div><div class="label">Kalan Tutkal (kg)</div></div>
         <div class="stat"><div class="num">${(o.kalan/1000).toFixed(1)}</div><div class="label">Kalan Tutkal (ton)</div></div>
         <div class="stat"><div class="num">${o.ortalamaVardiyaHarcanan.toFixed(0)}</div><div class="label">Ort. Vardiya Başı Harcama (kg)</div></div>
         <div class="stat"><div class="num">${o.kacVardiyaGider!=null?o.kacVardiyaGider.toFixed(0):'—'}</div><div class="label">Bu Hızla Kaç Vardiya Gider</div></div>
+        <div class="stat"><div class="num">${o.kacGunGider!=null?o.kacGunGider.toFixed(0):'—'}</div><div class="label">Bu Hızla Kaç Gün Gider</div></div>
       </div>
-      <p class="hint" style="margin-top:10px;">Ortalama harcama, bugüne kadar girilen ${o.kayitSayisi} vardiya kaydına dayanır (çalışma yok işaretlenen vardiyalar hariç). Son kayıt: <b>${o.son?fmtDate(o.son.tarih)+' · Vardiya '+o.son.vardiya:'—'}</b></p>
+      <p class="hint" style="margin-top:10px;">Ortalama harcama, bugüne kadar girilen ${o.kayitSayisi} vardiya kaydına dayanır (çalışma yok işaretlenen vardiyalar hariç). Gün hesabı, günde 3 vardiya varsayımıyla yapılır. Son kayıt: <b>${o.son?fmtDate(o.son.tarih)+' · Vardiya '+o.son.vardiya:'—'}</b></p>
     `;
   }
 
