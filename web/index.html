@@ -266,7 +266,12 @@
     await loadProfilesMap();
     await loadOrders();
     await loadHatKapasiteleri();
-    if(state.activeTab==='uretim_takip') await loadGunlukUretim(true);
+    if(state.activeTab==='uretim_takip'){
+      await loadGunlukUretim(true);
+      await loadTutkal(true);
+      await loadReceteler(true);
+      await loadAyarlar(true);
+    }
     if(state.activeTab==='kantar'){
       await loadKantar(true);
       await loadSoyma(true);
@@ -419,8 +424,9 @@
     if(!error){
       state.kontraplakReceteleri = {};
       (data||[]).forEach(r => {
-        if(!state.kontraplakReceteleri[r.kalinlik]) state.kontraplakReceteleri[r.kalinlik] = {};
-        state.kontraplakReceteleri[r.kalinlik][r.yapilis||'Standart'] = r;
+        const k = Number(r.kalinlik);
+        if(!state.kontraplakReceteleri[k]) state.kontraplakReceteleri[k] = {};
+        state.kontraplakReceteleri[k][r.yapilis||'Standart'] = r;
       });
     }
     state.receteLoaded = true;
@@ -1530,7 +1536,7 @@
   }
 
   function receteBul(kalinlik, yapilis){
-    const grup = state.kontraplakReceteleri[kalinlik];
+    const grup = state.kontraplakReceteleri[Number(kalinlik)];
     if(!grup) return null;
     return grup[yapilis||'Standart'] || grup['Standart'] || Object.values(grup)[0] || null;
   }
@@ -1546,7 +1552,7 @@
   function tutkalliKatSayisi(kalinlik, yapilis){
     const r = receteBul(kalinlik, yapilis);
     if(!r) return null;
-    return r.tutkalli_kat_sayisi!=null ? r.tutkalli_kat_sayisi : Math.floor((r.kat_sayisi||0)/2);
+    return r.tutkalli_kat_sayisi!=null ? Number(r.tutkalli_kat_sayisi) : Math.floor((Number(r.kat_sayisi)||0)/2);
   }
 
   function papelAlaniM2(){
@@ -1567,14 +1573,15 @@
     (satirlar||[]).forEach(r => {
       const tKat = tutkalliKatSayisi(r.kalinlik);
       if(!tKat) return;
-      toplamGram += alan * (r.adet||0) * tKat * gramM2;
+      toplamGram += alan * (parseFloat(r.adet)||0) * tKat * gramM2;
     });
     return toplamGram/1000;
   }
 
   function gercekTutkalKg(tarih, vardiya){
-    const kayit = (state.tutkal||[]).find(t => t.tarih===tarih && t.vardiya===vardiya);
-    return kayit ? (kayit.harcanan||0) : null;
+    const tarihStr = String(tarih).slice(0,10);
+    const kayit = (state.tutkal||[]).find(t => String(t.tarih).slice(0,10)===tarihStr && Number(t.vardiya)===Number(vardiya));
+    return kayit ? (parseFloat(kayit.harcanan)||0) : null;
   }
 
   function papelUretilenHesapla(){
@@ -2730,6 +2737,11 @@
     else if(action==='modul'){
       state.modul = t.dataset.modul; state.activeTab = defaultTab(state.modul); state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
+      if(state.activeTab==='uretim_takip'){
+        if(!state.tutkalLoaded) loadTutkal(true);
+        if(!state.receteLoaded) loadReceteler(true);
+        if(!state.ayarlarLoaded) loadAyarlar(true);
+      }
       if(state.modul==='tedarik'){
         if(!state.kantarLoaded) loadKantar(true);
         if(!state.soymaLoaded) loadSoyma(true);
