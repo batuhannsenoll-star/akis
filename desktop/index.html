@@ -212,8 +212,13 @@
   function benzersizDegerler(liste, alan){
     return [...new Set(liste.map(r=>r[alan]).filter(v=>v))].sort((a,b)=>String(a).localeCompare(String(b),'tr'));
   }
-  function calcTutkal(input, dundenKalan){
+  function calcTutkal(input, dundenKalan, calismaYok){
     const n = x => parseFloat(x)||0;
+    if(calismaYok){
+      // Bu vardiyada çalışma/tutkal kullanımı yok: tank ölçümleri yapılmadı, stok değişmedi.
+      const kalanBaz = n(dundenKalan);
+      return { toplam: kalanBaz, harcanan: 0, kalan: kalanBaz + n(input.eklenen) };
+    }
     const ucSabit = (n(input.alt)+n(input.ust)+n(input.sog))*7;
     const kuH = n(input.k_u)*38;
     const kkH = n(input.k_k)*18;
@@ -1457,15 +1462,15 @@
         <table>
           <thead><tr><th>Tarih</th><th>Vrd.</th><th>Alt</th><th>Üst</th><th>Soğ.</th><th>K.U.</th><th>K.K.</th><th>İ.B.</th><th>M.G.</th><th>Eklenen</th><th>Harcanan</th><th>Kalan</th><th></th></tr></thead>
           <tbody>${kayitlar.map(r=>`<tr>
-            <td>${fmtDate(r.tarih)}</td>
+            <td>${fmtDate(r.tarih)}${r.calisma_yok?' <span class="hint" style="font-size:10px;">(Çalışma Yok)</span>':''}</td>
             <td class="mono">${r.vardiya}</td>
-            <td class="mono">${r.alt}</td>
-            <td class="mono">${r.ust}</td>
-            <td class="mono">${r.sog}</td>
-            <td class="mono">${r.k_u}</td>
-            <td class="mono">${r.k_k}</td>
-            <td class="mono">${r.i_b}</td>
-            <td class="mono">${r.m_g}</td>
+            <td class="mono">${r.calisma_yok?'—':r.alt}</td>
+            <td class="mono">${r.calisma_yok?'—':r.ust}</td>
+            <td class="mono">${r.calisma_yok?'—':r.sog}</td>
+            <td class="mono">${r.calisma_yok?'—':r.k_u}</td>
+            <td class="mono">${r.calisma_yok?'—':r.k_k}</td>
+            <td class="mono">${r.calisma_yok?'—':r.i_b}</td>
+            <td class="mono">${r.calisma_yok?'—':r.m_g}</td>
             <td class="mono">${r.eklenen||0}</td>
             <td class="mono">${r.harcanan}</td>
             <td class="mono">${r.kalan}</td>
@@ -2522,19 +2527,20 @@
           <p class="hint" style="margin-bottom:12px;">Dünden kalan: <b>${dundenKalan}</b></p>
           <form id="tutkal-kaydi-form" data-dunden="${dundenKalan}">
             <div class="form-grid">
+              <div class="field full" style="display:flex;align-items:center;gap:8px;"><label style="display:flex;align-items:center;gap:6px;font-weight:600;"><input type="checkbox" name="calisma_yok" ${r.calisma_yok?'checked':''} style="width:auto;"> Bu vardiyada çalışma / tutkal kullanımı olmadı</label></div>
               <div class="field"><label>Tarih</label><input type="date" name="tarih" required value="${r.tarih||todayStr()}"></div>
               <div class="field"><label>Vardiya</label><select name="vardiya">
                 <option value="1" ${r.vardiya===1?'selected':''}>1</option>
                 <option value="2" ${r.vardiya===2?'selected':''}>2</option>
                 <option value="3" ${r.vardiya===3?'selected':''}>3</option>
               </select></div>
-              <div class="field"><label>Alt</label><input type="number" step="any" name="alt" required value="${r.alt!=null?r.alt:''}"></div>
-              <div class="field"><label>Üst</label><input type="number" step="any" name="ust" required value="${r.ust!=null?r.ust:''}"></div>
-              <div class="field"><label>Soğ.</label><input type="number" step="any" name="sog" required value="${r.sog!=null?r.sog:''}"></div>
-              <div class="field"><label>K.U.</label><input type="number" step="any" name="k_u" required value="${r.k_u!=null?r.k_u:''}"></div>
-              <div class="field"><label>K.K.</label><input type="number" step="any" name="k_k" required value="${r.k_k!=null?r.k_k:''}"></div>
-              <div class="field"><label>İ.B.</label><input type="number" step="any" name="i_b" required value="${r.i_b!=null?r.i_b:''}"></div>
-              <div class="field"><label>M.G.</label><input type="number" step="any" name="m_g" required value="${r.m_g!=null?r.m_g:''}"></div>
+              <div class="field"><label>Alt</label><input type="number" step="any" name="alt" ${r.calisma_yok?'disabled':'required'} value="${r.alt!=null?r.alt:''}"></div>
+              <div class="field"><label>Üst</label><input type="number" step="any" name="ust" ${r.calisma_yok?'disabled':'required'} value="${r.ust!=null?r.ust:''}"></div>
+              <div class="field"><label>Soğ.</label><input type="number" step="any" name="sog" ${r.calisma_yok?'disabled':'required'} value="${r.sog!=null?r.sog:''}"></div>
+              <div class="field"><label>K.U.</label><input type="number" step="any" name="k_u" ${r.calisma_yok?'disabled':'required'} value="${r.k_u!=null?r.k_u:''}"></div>
+              <div class="field"><label>K.K.</label><input type="number" step="any" name="k_k" ${r.calisma_yok?'disabled':'required'} value="${r.k_k!=null?r.k_k:''}"></div>
+              <div class="field"><label>İ.B.</label><input type="number" step="any" name="i_b" ${r.calisma_yok?'disabled':'required'} value="${r.i_b!=null?r.i_b:''}"></div>
+              <div class="field"><label>M.G.</label><input type="number" step="any" name="m_g" ${r.calisma_yok?'disabled':'required'} value="${r.m_g!=null?r.m_g:''}"></div>
               <div class="field"><label>Eklenen <span class="hint">(yeni stok geldiyse)</span></label><input type="number" step="any" name="eklenen" value="${r.eklenen||0}"></div>
               <div class="field readout"><label>Harcanan (otomatik)</label><input type="text" id="tk-harcanan-readout" readonly value="${r.harcanan!=null?r.harcanan:0}"></div>
               <div class="field readout"><label>Kalan (otomatik)</label><input type="text" id="tk-kalan-readout" readonly value="${r.kalan!=null?r.kalan:0}"></div>
@@ -3010,11 +3016,14 @@
     if(e.target.closest('#tutkal-kaydi-form')){
       const form = e.target.closest('#tutkal-kaydi-form');
       const dunden = form.dataset.dunden;
+      const calismaYok = !!(form.calisma_yok && form.calisma_yok.checked);
+      ['alt','ust','sog','k_u','k_k','i_b'].forEach(name => { if(form[name]) form[name].disabled = calismaYok; });
+      if(form.m_g) form.m_g.disabled = calismaYok;
       const r = calcTutkal({
         alt:form.alt.value, ust:form.ust.value, sog:form.sog.value,
         k_u:form.k_u.value, k_k:form.k_k.value, i_b:form.i_b.value,
         m_g:form.m_g.value, eklenen:form.eklenen.value
-      }, dunden);
+      }, dunden, calismaYok);
       const hr = document.getElementById('tk-harcanan-readout');
       const kr = document.getElementById('tk-kalan-readout');
       if(hr) hr.value = Math.round(r.harcanan*1000)/1000;
@@ -3207,12 +3216,13 @@
     else if(e.target.id==='tutkal-kaydi-form'){
       const f = e.target;
       const dunden = f.dataset.dunden;
+      const calismaYok = !!(f.calisma_yok && f.calisma_yok.checked);
       const input = {
-        alt:f.alt.value, ust:f.ust.value, sog:f.sog.value,
-        k_u:f.k_u.value, k_k:f.k_k.value, i_b:f.i_b.value,
-        m_g:f.m_g.value, eklenen:f.eklenen.value || 0
+        alt: calismaYok?0:f.alt.value, ust: calismaYok?0:f.ust.value, sog: calismaYok?0:f.sog.value,
+        k_u: calismaYok?0:f.k_u.value, k_k: calismaYok?0:f.k_k.value, i_b: calismaYok?0:f.i_b.value,
+        m_g: calismaYok?0:f.m_g.value, eklenen:f.eklenen.value || 0
       };
-      const hesap = calcTutkal(input, dunden);
+      const hesap = calcTutkal(input, dunden, calismaYok);
       const data = {
         tarih: f.tarih.value,
         vardiya: parseInt(f.vardiya.value,10),
@@ -3220,6 +3230,7 @@
         k_u: parseFloat(input.k_u), k_k: parseFloat(input.k_k), i_b: parseFloat(input.i_b), m_g: parseFloat(input.m_g),
         eklenen: parseFloat(input.eklenen) || 0,
         dunden_kalan: parseFloat(dunden) || 0,
+        calisma_yok: calismaYok,
         toplam: Math.round(hesap.toplam*1000)/1000,
         harcanan: Math.round(hesap.harcanan*1000)/1000,
         kalan: Math.round(hesap.kalan*1000)/1000
