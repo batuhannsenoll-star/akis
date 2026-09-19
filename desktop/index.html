@@ -237,8 +237,10 @@
     const kkH = n(input.k_k)*18;
     const ibH = n(input.i_b)*18;
     const toplam = ucSabit+kuH+kkH+ibH;
-    const harcanan = n(dundenKalan) - toplam - n(input.m_g);
-    const kalan = toplam + n(input.eklenen);
+    // Eklenen (yeni gelen tutkal) aynı tanklara karışıp toplam'a da yansıdığı için,
+    // harcanan hesabına dahil edilmeli; kalan ise toplam'ın kendisidir (eklenen'i tekrar eklemek çift sayım olur).
+    const harcanan = n(dundenKalan) + n(input.eklenen) - toplam - n(input.m_g);
+    const kalan = toplam;
     return { toplam, harcanan, kalan };
   }
   function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -846,8 +848,36 @@
   function canEditSatis(rol){ return rol==='admin' || rol==='satis'; }
 
   // ---------- Render ----------
+  function odakBilgisiAl(){
+    const el = document.activeElement;
+    if(!el || !app.contains(el)) return null;
+    if(!['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return null;
+    let sel = null;
+    if(el.id){
+      sel = '#'+el.id;
+    } else if(el.dataset && el.dataset.action){
+      sel = '[data-action="'+el.dataset.action+'"]' + (el.dataset.index!=null ? '[data-index="'+el.dataset.index+'"]' : '');
+    } else if(el.name){
+      const form = el.closest('form');
+      sel = (form && form.id ? '#'+form.id+' ' : '') + '[name="'+el.name+'"]';
+    }
+    if(!sel) return null;
+    let selStart=null, selEnd=null;
+    try{ selStart = el.selectionStart; selEnd = el.selectionEnd; }catch(e){}
+    return { sel, selStart, selEnd };
+  }
+  function odakGeriYukle(bilgi){
+    if(!bilgi) return;
+    const el = app.querySelector(bilgi.sel);
+    if(!el) return;
+    el.focus();
+    if(bilgi.selStart!=null && typeof el.selectionStart === 'number'){
+      try{ el.selectionStart = bilgi.selStart; el.selectionEnd = bilgi.selEnd; }catch(e){}
+    }
+  }
   function render(){
     if(!state.user){ renderGate(); return; }
+    const odak = odakBilgisiAl();
     if(window.electronAPI && !state.__windowResized){
       state.__windowResized = true;
       window.electronAPI.resizeToMain();
@@ -889,6 +919,7 @@
       <div class="app-footer">${escapeHtml(FIRMA_ADI)} için geliştirildi</div>
       ${state.modal ? renderModal(rol) : ''}
     `;
+    odakGeriYukle(odak);
   }
 
   function renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list){
