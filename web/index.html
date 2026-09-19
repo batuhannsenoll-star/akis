@@ -216,6 +216,7 @@
     ozetAy: new Date().toISOString().slice(0,7), // 'YYYY-MM'
     ozetYil: String(new Date().getFullYear()),
     gunlukBaslangic: '', gunlukBitis: '',
+    planlamaKalinlik: '', planlamaYapilis: 'Standart', planlamaHedefM3: null,
     gunlukAcikBloklar: {},
     loading: true,
     modal: null,
@@ -1730,6 +1731,65 @@
     return { ihtiyac, eksikRecete: Array.from(eksikRecete) };
   }
 
+  // Kalınlığa göre (dizilim: kapak/tutkallı/içlik) günlük papel üretim ihtiyacı.
+  // Kapak ve içlik katmanları "230 papel" ile, tutkallı katmanlar "180 papel" ile beslenir.
+  // Panel, papel_eni_cm × papel_boyu_cm ölçüsünde tam boy sac kabul edilir (hacimce ~1:1 pres varsayımı,
+  // tomrukHedefineGoreIhtiyacHesapla'daki aynı varsayımla tutarlı).
+  function papelUretimIhtiyaciHesapla(kalinlik, yapilis, hedefM3){
+    const r = receteBul(kalinlik, yapilis);
+    if(!r || !r.dizilim || !r.dizilim.length) return null;
+    const dizilim = r.dizilim.map(k=>parseFloat(k)||0);
+    const n = dizilim.length;
+    const toplamKalinlikMm = dizilim.reduce((s,k)=>s+k,0);
+    if(toplamKalinlikMm<=0) return null;
+    const alan = papelAlaniM2();
+    const panelHacmiM3 = alan * (toplamKalinlikMm/1000);
+    const panelSayisiGunluk = panelHacmiM3>0 ? hedefM3/panelHacmiM3 : 0;
+
+    const roller = {
+      kapak: { ad:'Kapak', orientasyon:'230', kat:0, kalinlikToplam:0, kalinliklar: new Set() },
+      tutkalli: { ad:'Tutkallı', orientasyon:'180', kat:0, kalinlikToplam:0, kalinliklar: new Set() },
+      icli: { ad:'İçlik', orientasyon:'230', kat:0, kalinlikToplam:0, kalinliklar: new Set() }
+    };
+    // 2,1mm ve 1,2mm papeller telli kurutmada ayrı ayrı kurutulduğu için, aynı besleme yönünü
+    // (230/180) paylaşsalar bile kalınlığa göre ayrı satırlarda toplanır.
+    const kirilimMap = {};
+    dizilim.forEach((kMm, idx) => {
+      const pos = idx+1;
+      const rol = (pos===1 || pos===n) ? 'kapak' : (pos%2===0 ? 'tutkalli' : 'icli');
+      roller[rol].kat += 1;
+      roller[rol].kalinlikToplam += kMm;
+      roller[rol].kalinliklar.add(kMm);
+      const orientasyon = roller[rol].orientasyon;
+      const key = kMm+'|'+orientasyon;
+      if(!kirilimMap[key]) kirilimMap[key] = { kalinlikMm: kMm, orientasyon, kat: 0 };
+      kirilimMap[key].kat += 1;
+    });
+    Object.values(roller).forEach(o => {
+      o.papelSayisiGunluk = o.kat * panelSayisiGunluk;
+      o.m3Gunluk = alan * (o.kalinlikToplam/1000) * panelSayisiGunluk;
+      o.kalinliklar = Array.from(o.kalinliklar).sort((a,b)=>a-b);
+    });
+    const kirilim = Object.values(kirilimMap).map(o => ({
+      kalinlikMm: o.kalinlikMm, orientasyon: o.orientasyon, kat: o.kat,
+      papelSayisiGunluk: o.kat * panelSayisiGunluk,
+      m3Gunluk: alan * (o.kalinlikMm/1000) * o.kat * panelSayisiGunluk
+    })).sort((a,b)=> a.orientasyon.localeCompare(b.orientasyon) || a.kalinlikMm-b.kalinlikMm);
+
+    const orient230Papel = roller.kapak.papelSayisiGunluk + roller.icli.papelSayisiGunluk;
+    const orient230M3 = roller.kapak.m3Gunluk + roller.icli.m3Gunluk;
+    const orient180Papel = roller.tutkalli.papelSayisiGunluk;
+    const orient180M3 = roller.tutkalli.m3Gunluk;
+
+    return {
+      kalinlik, yapilis: yapilis||'Standart', hedefM3, kat_sayisi: n, toplamKalinlikMm,
+      alan, panelHacmiM3, panelSayisiGunluk,
+      kapak: roller.kapak, tutkalli: roller.tutkalli, icli: roller.icli,
+      orient230Papel, orient230M3, orient180Papel, orient180M3,
+      kirilim
+    };
+  }
+
   function uretimPlanlamaHesapla(){
     const stok = papelStokuHesapla();
     const otuzGunOnce = new Date(); otuzGunOnce.setDate(otuzGunOnce.getDate()-30);
@@ -2194,6 +2254,15 @@
   function renderUretimPlanlamaTab(rol){
     const p = uretimPlanlamaHesapla();
     const KALINLIK_ADI = { '1.2':'1,2 mm', '2.1':'2,1 mm' };
+
+    const kalinlikSecenekleri = Object.keys(state.kontraplakReceteleri)
+      .map(k=>Number(k)).filter(k=>Object.keys(state.kontraplakReceteleri[k]||{}).length>0).sort((a,b)=>a-b);
+    const seciliKalinlik = state.planlamaKalinlik!=='' ? Number(state.planlamaKalinlik) : '';
+    const yapilisSecenekleri = seciliKalinlik!=='' ? Object.keys(state.kontraplakReceteleri[seciliKalinlik]||{}) : [];
+    const seciliYapilis = yapilisSecenekleri.includes(state.planlamaYapilis) ? state.planlamaYapilis : (yapilisSecenekleri[0]||'Standart');
+    const hedefGosterilen = state.planlamaHedefM3!=null ? state.planlamaHedefM3 : ayar('hedef_gunluk_kontraplak_m3',30);
+    const sonuc = seciliKalinlik!=='' ? papelUretimIhtiyaciHesapla(seciliKalinlik, seciliYapilis, parseFloat(hedefGosterilen)||0) : null;
+
     return `
       ${p.eksikRecete.length>0 ? `<div class="msg err">Şu kalınlıkların reçetesi tanımlı değil, hesaba katılamadı: ${p.eksikRecete.map(k=>k+' mm').join(', ')}</div>` : ''}
       ${p.oneri ? `<div class="msg ok" style="font-size:16px;font-weight:700;">Bugünkü öneri: <b>${KALINLIK_ADI[p.oneri]} soy</b></div>` : `<div class="msg err">Öneri hesaplanamadı — yeterli geçmiş üretim verisi yok.</div>`}
@@ -2215,6 +2284,47 @@
         <h3 style="font-size:14px;margin-bottom:10px;">Bekleyen Siparişlerden Papel İhtiyacı</h3>
         <div class="meta-row"><span>1,2 mm ihtiyaç</span><b>${p.ihtiyac['1.2'].toFixed(2)} m³</b></div>
         <div class="meta-row"><span>2,1 mm ihtiyaç</span><b>${p.ihtiyac['2.1'].toFixed(2)} m³</b></div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-top:20px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Kalınlığa Göre Günlük Papel Üretim İhtiyacı</h3>
+        <p class="hint" style="margin-bottom:12px;">Üretilecek kontra kalınlığını seç; kapak, tutkallı ve içlik katmanları için gereken papel miktarı ve besleme yönü (230/180) otomatik hesaplanır.</p>
+        <div class="form-grid" style="margin-bottom:14px;">
+          <div class="field">
+            <label>Üretilecek Kalınlık</label>
+            <select data-action="planlama-kalinlik">
+              <option value="">Seçiniz</option>
+              ${kalinlikSecenekleri.map(k=>`<option value="${k}" ${seciliKalinlik===k?'selected':''}>${k} mm</option>`).join('')}
+            </select>
+          </div>
+          ${yapilisSecenekleri.length>1 ? `<div class="field">
+            <label>Yapılış</label>
+            <select data-action="planlama-yapilis">
+              ${yapilisSecenekleri.map(y=>`<option value="${escapeHtml(y)}" ${seciliYapilis===y?'selected':''}>${escapeHtml(y)}</option>`).join('')}
+            </select>
+          </div>` : ''}
+          <div class="field">
+            <label>Günlük Hedef (m³)</label>
+            <input type="number" step="any" min="0" data-action="planlama-hedef" value="${hedefGosterilen}">
+          </div>
+        </div>
+        ${!sonuc ? `<p class="hint">${seciliKalinlik!=='' ? 'Bu kalınlık için dizilim/reçete tanımlı değil.' : 'Sonuç görmek için bir kalınlık seçin.'}</p>` : `
+          <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:14px;">
+            <table>
+              <thead><tr><th>Katman</th><th>Kat Sayısı</th><th>Kalınlık</th><th>Besleme</th><th>m³/gün</th><th>Papel/gün</th></tr></thead>
+              <tbody>
+                <tr><td>Kapak</td><td class="mono">${sonuc.kapak.kat}</td><td class="mono">${sonuc.kapak.kalinliklar.join(' + ')} mm</td><td class="mono">230</td><td class="mono">${sonuc.kapak.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.kapak.papelSayisiGunluk)}</td></tr>
+                <tr><td>Tutkallı</td><td class="mono">${sonuc.tutkalli.kat}</td><td class="mono">${sonuc.tutkalli.kalinliklar.join(' + ')} mm</td><td class="mono">180</td><td class="mono">${sonuc.tutkalli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.tutkalli.papelSayisiGunluk)}</td></tr>
+                <tr><td>İçlik</td><td class="mono">${sonuc.icli.kat}</td><td class="mono">${sonuc.icli.kalinliklar.join(' + ')} mm</td><td class="mono">230</td><td class="mono">${sonuc.icli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.icli.papelSayisiGunluk)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="msg ok" style="font-size:14.5px;line-height:1.7;">
+            Bugün <b>${sonuc.hedefM3.toFixed(1)} m³ (${KALINLIK_ADI[sonuc.kalinlik]||sonuc.kalinlik+' mm'})</b> kontraplak üretmek için (2,1mm ve 1,2mm ayrı kurutulduğundan ayrı ayrı):<br>
+            ${sonuc.kirilim.map(k=>`• <b>${Math.ceil(k.papelSayisiGunluk)} adet</b> ${k.kalinlikMm} mm — ${k.orientasyon} papel (${k.m3Gunluk.toFixed(2)} m³)`).join('<br>')}
+            <br>üretilmesi (soyulup kurutulması) gerekiyor.
+          </div>
+        `}
       </div>
     `;
   }
@@ -3168,6 +3278,9 @@
     if(e.target.matches('[data-action="gunluk-tarih-bitis"]')){
       state.gunlukBitis = e.target.value; render();
     }
+    if(e.target.matches('[data-action="planlama-hedef"]')){
+      state.planlamaHedefM3 = e.target.value; render();
+    }
     if(e.target.closest('#kantar-kaydi-form')){
       const form = e.target.closest('#kantar-kaydi-form');
       const readout = document.getElementById('kantar-m3-readout');
@@ -3195,6 +3308,12 @@
         return { file, adSiz, uzanti, yeniAd: adSiz };
       });
       render();
+    }
+    if(e.target.matches('[data-action="planlama-kalinlik"]')){
+      state.planlamaKalinlik = e.target.value; state.planlamaYapilis = 'Standart'; render();
+    }
+    if(e.target.matches('[data-action="planlama-yapilis"]')){
+      state.planlamaYapilis = e.target.value; render();
     }
     if(e.target.matches('#soyma-kalinlik-select')){
       const form = e.target.closest('#soyma-kaydi-form');

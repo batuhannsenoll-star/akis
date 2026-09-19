@@ -1742,20 +1742,34 @@
     const panelSayisiGunluk = panelHacmiM3>0 ? hedefM3/panelHacmiM3 : 0;
 
     const roller = {
-      kapak: { ad:'Kapak', orientasyon:'230', kat:0, kalinlikToplam:0 },
-      tutkalli: { ad:'Tutkallı', orientasyon:'180', kat:0, kalinlikToplam:0 },
-      icli: { ad:'İçlik', orientasyon:'230', kat:0, kalinlikToplam:0 }
+      kapak: { ad:'Kapak', orientasyon:'230', kat:0, kalinlikToplam:0, kalinliklar: new Set() },
+      tutkalli: { ad:'Tutkallı', orientasyon:'180', kat:0, kalinlikToplam:0, kalinliklar: new Set() },
+      icli: { ad:'İçlik', orientasyon:'230', kat:0, kalinlikToplam:0, kalinliklar: new Set() }
     };
+    // 2,1mm ve 1,2mm papeller telli kurutmada ayrı ayrı kurutulduğu için, aynı besleme yönünü
+    // (230/180) paylaşsalar bile kalınlığa göre ayrı satırlarda toplanır.
+    const kirilimMap = {};
     dizilim.forEach((kMm, idx) => {
       const pos = idx+1;
       const rol = (pos===1 || pos===n) ? 'kapak' : (pos%2===0 ? 'tutkalli' : 'icli');
       roller[rol].kat += 1;
       roller[rol].kalinlikToplam += kMm;
+      roller[rol].kalinliklar.add(kMm);
+      const orientasyon = roller[rol].orientasyon;
+      const key = kMm+'|'+orientasyon;
+      if(!kirilimMap[key]) kirilimMap[key] = { kalinlikMm: kMm, orientasyon, kat: 0 };
+      kirilimMap[key].kat += 1;
     });
     Object.values(roller).forEach(o => {
       o.papelSayisiGunluk = o.kat * panelSayisiGunluk;
       o.m3Gunluk = alan * (o.kalinlikToplam/1000) * panelSayisiGunluk;
+      o.kalinliklar = Array.from(o.kalinliklar).sort((a,b)=>a-b);
     });
+    const kirilim = Object.values(kirilimMap).map(o => ({
+      kalinlikMm: o.kalinlikMm, orientasyon: o.orientasyon, kat: o.kat,
+      papelSayisiGunluk: o.kat * panelSayisiGunluk,
+      m3Gunluk: alan * (o.kalinlikMm/1000) * o.kat * panelSayisiGunluk
+    })).sort((a,b)=> a.orientasyon.localeCompare(b.orientasyon) || a.kalinlikMm-b.kalinlikMm);
 
     const orient230Papel = roller.kapak.papelSayisiGunluk + roller.icli.papelSayisiGunluk;
     const orient230M3 = roller.kapak.m3Gunluk + roller.icli.m3Gunluk;
@@ -1766,7 +1780,8 @@
       kalinlik, yapilis: yapilis||'Standart', hedefM3, kat_sayisi: n, toplamKalinlikMm,
       alan, panelHacmiM3, panelSayisiGunluk,
       kapak: roller.kapak, tutkalli: roller.tutkalli, icli: roller.icli,
-      orient230Papel, orient230M3, orient180Papel, orient180M3
+      orient230Papel, orient230M3, orient180Papel, orient180M3,
+      kirilim
     };
   }
 
@@ -2289,18 +2304,18 @@
         ${!sonuc ? `<p class="hint">${seciliKalinlik!=='' ? 'Bu kalınlık için dizilim/reçete tanımlı değil.' : 'Sonuç görmek için bir kalınlık seçin.'}</p>` : `
           <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:14px;">
             <table>
-              <thead><tr><th>Katman</th><th>Kat Sayısı</th><th>Besleme</th><th>m³/gün</th><th>Papel/gün</th></tr></thead>
+              <thead><tr><th>Katman</th><th>Kat Sayısı</th><th>Kalınlık</th><th>Besleme</th><th>m³/gün</th><th>Papel/gün</th></tr></thead>
               <tbody>
-                <tr><td>Kapak</td><td class="mono">${sonuc.kapak.kat}</td><td class="mono">230</td><td class="mono">${sonuc.kapak.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.kapak.papelSayisiGunluk)}</td></tr>
-                <tr><td>Tutkallı</td><td class="mono">${sonuc.tutkalli.kat}</td><td class="mono">180</td><td class="mono">${sonuc.tutkalli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.tutkalli.papelSayisiGunluk)}</td></tr>
-                <tr><td>İçlik</td><td class="mono">${sonuc.icli.kat}</td><td class="mono">230</td><td class="mono">${sonuc.icli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.icli.papelSayisiGunluk)}</td></tr>
+                <tr><td>Kapak</td><td class="mono">${sonuc.kapak.kat}</td><td class="mono">${sonuc.kapak.kalinliklar.join(' + ')} mm</td><td class="mono">230</td><td class="mono">${sonuc.kapak.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.kapak.papelSayisiGunluk)}</td></tr>
+                <tr><td>Tutkallı</td><td class="mono">${sonuc.tutkalli.kat}</td><td class="mono">${sonuc.tutkalli.kalinliklar.join(' + ')} mm</td><td class="mono">180</td><td class="mono">${sonuc.tutkalli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.tutkalli.papelSayisiGunluk)}</td></tr>
+                <tr><td>İçlik</td><td class="mono">${sonuc.icli.kat}</td><td class="mono">${sonuc.icli.kalinliklar.join(' + ')} mm</td><td class="mono">230</td><td class="mono">${sonuc.icli.m3Gunluk.toFixed(2)}</td><td class="mono">${Math.ceil(sonuc.icli.papelSayisiGunluk)}</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="msg ok" style="font-size:14.5px;line-height:1.6;">
-            Bugün <b>${sonuc.hedefM3.toFixed(1)} m³ (${KALINLIK_ADI[sonuc.kalinlik]||sonuc.kalinlik+' mm'})</b> kontraplak üretmek için:<br>
-            <b>${Math.ceil(sonuc.orient230Papel)} adet</b> 230 papel (kapak + içlik, ${sonuc.orient230M3.toFixed(2)} m³) ve
-            <b>${Math.ceil(sonuc.orient180Papel)} adet</b> 180 papel (tutkallı, ${sonuc.orient180M3.toFixed(2)} m³) soyulup kurutulması gerekiyor.
+          <div class="msg ok" style="font-size:14.5px;line-height:1.7;">
+            Bugün <b>${sonuc.hedefM3.toFixed(1)} m³ (${KALINLIK_ADI[sonuc.kalinlik]||sonuc.kalinlik+' mm'})</b> kontraplak üretmek için (2,1mm ve 1,2mm ayrı kurutulduğundan ayrı ayrı):<br>
+            ${sonuc.kirilim.map(k=>`• <b>${Math.ceil(k.papelSayisiGunluk)} adet</b> ${k.kalinlikMm} mm — ${k.orientasyon} papel (${k.m3Gunluk.toFixed(2)} m³)`).join('<br>')}
+            <br>üretilmesi (soyulup kurutulması) gerekiyor.
           </div>
         `}
       </div>
