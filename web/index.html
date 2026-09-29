@@ -217,6 +217,7 @@
     ozetYil: String(new Date().getFullYear()),
     ozetAltGorunum: 'aylik',
     ozetHafta: '', // 'YYYY-Www', boşsa render sırasında bu haftaya set edilir
+    kapasiteAltGorunum: 'hat', // 'hat' | 'kurutma'
     gunlukBaslangic: '', gunlukBitis: '',
     planlamaSatirlari: [{ kalinlik:'', yapilis:'Standart', adet:'' }],
     kurutmaModelParams: {
@@ -1174,6 +1175,66 @@
     `;
   }
 
+  function kurutmaMakineKarti(baslik, renkAna, h){
+    return `
+      <div class="card" style="padding:16px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">${escapeHtml(baslik)}</h3>
+        <div class="meta-row"><span>230 papel — devir süresi</span><b>${h.cycle230.toFixed(1)} sn/adet</b></div>
+        <div class="meta-row"><span>180 papel — devir süresi</span><b>${h.cycle180.toFixed(1)} sn/adet</b></div>
+        <div class="meta-row"><span>230 ile vardiya (8sa) üretimi</span><b>${h.vardiya230.toFixed(0)} adet</b></div>
+        <div class="meta-row"><span>180 ile vardiya (8sa) üretimi</span><b>${h.vardiya180.toFixed(0)} adet</b></div>
+        <div class="meta-row"><span>230 ile günlük (24sa) üretim</span><b>${h.gunde230.toFixed(0)} adet</b></div>
+        <div class="meta-row"><span>180 ile günlük (24sa) üretim</span><b>${h.gunde180.toFixed(0)} adet</b></div>
+        <div style="display:flex;gap:12px;margin-top:12px;">
+          <div style="flex:1;text-align:center;padding:12px 8px;background:${renkAna}14;border-radius:10px;">
+            <div style="font-size:22px;font-weight:800;">230</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">Günlük Kapasite</div>
+            <div style="font-size:17px;font-weight:800;margin-top:2px;">${h.m3Gunde230.toFixed(1)} m³</div>
+          </div>
+          <div style="flex:1;text-align:center;padding:12px 8px;background:${renkAna}14;border-radius:10px;">
+            <div style="font-size:22px;font-weight:800;">180</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">Günlük Kapasite</div>
+            <div style="font-size:17px;font-weight:800;margin-top:2px;">${h.m3Gunde180.toFixed(1)} m³</div>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:10px;line-height:1.5;text-transform:none;letter-spacing:0;font-size:12.5px;">230 papel, 180'e göre makineyi <b>%${h.farkYuzde.toFixed(1)} daha verimli</b> kullanır — ardışık papeller arasında daha az beklenir.</p>
+      </div>
+    `;
+  }
+
+  function renderKurutmaKapasitesiSayfasi(){
+    const r = roleliKurutmaHesap();
+    const t = telliKurutmaHesap();
+    return `
+      <p class="hint" style="margin-bottom:14px;">Röleli ve telli kurutma makinelerinin, papel ölçüleri (Ayarlar → Papel Eni/Boyu/Kalınlığı) ve çevrim hızına (Ayarlar → Kurutma/Röleli Referans Süre) göre ulaşabileceği kapasiteyi gösterir. Bu sayfa sipariş veya üretim planından bağımsızdır — sadece makinelerin fiziksel hızını yansıtır. Değerleri değiştirmek için Ayarlar'ı düzenleyin.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        ${kurutmaMakineKarti('Röleli Kurutma', '#185FA5', r)}
+        ${kurutmaMakineKarti('Telli Kurutma', '#0F6E56', t)}
+      </div>
+      <div class="card" style="padding:16px;margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Röleli ile Telli Karşılaştırması (Günlük m³)</h3>
+        <table>
+          <thead><tr><th></th><th>230 Papel</th><th>180 Papel</th></tr></thead>
+          <tbody>
+            <tr><td>Röleli</td><td class="mono"><b>${r.m3Gunde230.toFixed(1)} m³</b></td><td class="mono"><b>${r.m3Gunde180.toFixed(1)} m³</b></td></tr>
+            <tr><td>Telli</td><td class="mono"><b>${t.m3Gunde230.toFixed(1)} m³</b></td><td class="mono"><b>${t.m3Gunde180.toFixed(1)} m³</b></td></tr>
+          </tbody>
+        </table>
+        <p class="hint" style="margin-top:10px;">Bu tablo, verimsizlik/duruş kayıpları düşülmeden, makinelerin teorik (kesintisiz 24 saat) hızını gösterir. Gerçek üretimde mola, arıza ve genel hata payı bu rakamların altına düşürür — o hesap için Üretim Planlama → Kurutma Süresi Tahmini bölümüne bakabilirsiniz.</p>
+      </div>
+    `;
+  }
+
+  function renderKapasiteRaporuView(rol){
+    const altView = state.kapasiteAltGorunum || 'hat';
+    const altBar = `<div class="filters" style="margin-bottom:12px;">
+      <div class="chip ${altView==='hat'?'active':''}" data-action="kapasite-alt-view" data-view="hat">Hat Şeması</div>
+      <div class="chip ${altView==='kurutma'?'active':''}" data-action="kapasite-alt-view" data-view="kurutma">Kurutma Kapasitesi</div>
+    </div>`;
+    if(altView==='kurutma') return altBar + renderKurutmaKapasitesiSayfasi();
+    return altBar + renderHatTab(rol);
+  }
+
   // ---------- Üretim Takip ----------
   function ayAdi(ym){
     const aylar = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
@@ -1381,7 +1442,7 @@
     else if(view==='ozet') icerik = renderOzetView();
     else if(view==='yillik') icerik = renderYillikOzet(state.ozetYil, hesaplaYillikOzet(state.ozetYil));
     else if(view==='tutkal') icerik = renderTutkalTab(rol);
-    else if(view==='kapasite') icerik = renderHatTab(rol);
+    else if(view==='kapasite') icerik = renderKapasiteRaporuView(rol);
     else if(view==='torna') icerik = renderSoymaCiktisiTab(rol);
     else if(view==='receteler') icerik = renderReceteTab(rol);
     else icerik = '';
@@ -1855,6 +1916,37 @@
     const gunde230 = saatte230*gunSaat, gunde180 = saatte180*gunSaat;
     return {
       alan, hacimM3, cycle230, cycle180, saatte230, saatte180,
+      vardiya230: saatte230*vardiyaSaat, vardiya180: saatte180*vardiyaSaat,
+      gunde230, gunde180,
+      m3Gunde230: gunde230*hacimM3, m3Gunde180: gunde180*hacimM3,
+      farkYuzde
+    };
+  }
+
+  function roleliKurutmaHesap(){
+    // Röleli kurutma: aynı anda "roleli_kat_sayisi" kadar papel kurutulur (kat grubu). "230" papel
+    // boyu (papel_boyu_cm) yönünde, "180" papel ise eni (papel_eni_cm) yönünde ilerler. Röleli Referans
+    // Süre, bir kat grubunun 230 yönünde (boyu kadar) ilerleme süresidir (örn. 60 sn / 4 papel);
+    // 180 yönü süresi buna oranla (eni/boyu) otomatik hesaplanır.
+    const refSure = parseFloat(ayar('roleli_referans_sure_sn',60))||60;
+    const katSayisi = parseFloat(ayar('roleli_kat_sayisi',4))||4;
+    const eni = parseFloat(ayar('papel_eni_cm',180))||180;
+    const boyu = parseFloat(ayar('papel_boyu_cm',230))||230;
+    const kalinlikMm = parseFloat(ayar('papel_kalinlik_mm',2.1))||2.1;
+    const alan = papelAlaniM2();
+    const hacimM3 = alan * (kalinlikMm/1000);
+    const cycle230Grup = refSure;
+    const cycle180Grup = boyu>0 ? refSure * (eni/boyu) : 0;
+    const cycle230 = katSayisi>0 ? cycle230Grup/katSayisi : 0;
+    const cycle180 = katSayisi>0 ? cycle180Grup/katSayisi : 0;
+    const saatte230 = cycle230>0 ? 3600/cycle230 : 0;
+    const saatte180 = cycle180>0 ? 3600/cycle180 : 0;
+    const gunSaat = 24; // 3 vardiya × 8 saat
+    const vardiyaSaat = 8;
+    const farkYuzde = saatte180>0 ? ((saatte230-saatte180)/saatte180)*100 : 0;
+    const gunde230 = saatte230*gunSaat, gunde180 = saatte180*gunSaat;
+    return {
+      alan, hacimM3, katSayisi, cycle230Grup, cycle180Grup, cycle230, cycle180, saatte230, saatte180,
       vardiya230: saatte230*vardiyaSaat, vardiya180: saatte180*vardiyaSaat,
       gunde230, gunde180,
       m3Gunde230: gunde230*hacimM3, m3Gunde180: gunde180*hacimM3,
@@ -2678,7 +2770,7 @@
           </div>
         ` : ''}
       </div>
-      ${gecerliSonuclar.length>0 ? renderKurutmaSuresiTahmini(toplamKirilim) : ''}
+      ${renderKurutmaSuresiTahmini(toplamKirilim)}
     `;
   }
 
@@ -3296,6 +3388,10 @@
               <div class="field full"><label>Kurutma Referans Mesafe (cm)</label><input type="number" step="any" min="0" name="kurutma_referans_mesafe_cm" required value="${ayar('kurutma_referans_mesafe_cm',180)}"></div>
               <div class="field full"><label>Kurutma Referans Süre (saniye)</label><input type="number" step="any" min="0" name="kurutma_referans_sure_sn" required value="${ayar('kurutma_referans_sure_sn',26)}">
               <div class="hint">Telli kurutma makinesi bu hızda bu mesafeyi bu sürede alır (örn. 180 cm / 26 sn). 230/180 papel devir süresi hesabı buna göre yapılır.</div></div>
+              <div class="field full"><label>Röleli Referans Süre (saniye)</label><input type="number" step="any" min="0" name="roleli_referans_sure_sn" required value="${ayar('roleli_referans_sure_sn',60)}">
+              <div class="hint">Röleli kurutma makinesi, papel boyu (230 cm) yönünde ilerleyen bir kat grubunu bu sürede verir (örn. 60 sn). 180 yönü süresi buna oranla otomatik hesaplanır.</div></div>
+              <div class="field full"><label>Röleli Kat Sayısı</label><input type="number" step="1" min="1" name="roleli_kat_sayisi" required value="${ayar('roleli_kat_sayisi',4)}">
+              <div class="hint">Röleli'nin aynı anda kaç papel kattığı (şu an 4).</div></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -3412,6 +3508,7 @@
     }
     else if(action==='tk-view'){ state.tutkalView = t.dataset.view; render(); }
     else if(action==='ozet-alt-view'){ state.ozetAltGorunum = t.dataset.view; render(); }
+    else if(action==='kapasite-alt-view'){ state.kapasiteAltGorunum = t.dataset.view; render(); }
     else if(action==='uretim-ekle'){ state.modal = { type:'uretim-kaydi', kayit:null }; render(); }
     else if(action==='uretim-duzenle'){ const r = state.gunlukUretim.find(x=>x.id===t.dataset.id); state.modal = { type:'uretim-kaydi', kayit:r }; render(); }
     else if(action==='planlama-satir-ekle'){ state.planlamaSatirlari.push({ kalinlik:'', yapilis:'Standart', adet:'' }); render(); }
@@ -4114,7 +4211,9 @@
         { anahtar:'karisim_un_kg', deger: parseFloat(f.karisim_un_kg.value) },
         { anahtar:'karisim_su_litre', deger: parseFloat(f.karisim_su_litre.value) },
         { anahtar:'kurutma_referans_mesafe_cm', deger: parseFloat(f.kurutma_referans_mesafe_cm.value) },
-        { anahtar:'kurutma_referans_sure_sn', deger: parseFloat(f.kurutma_referans_sure_sn.value) }
+        { anahtar:'kurutma_referans_sure_sn', deger: parseFloat(f.kurutma_referans_sure_sn.value) },
+        { anahtar:'roleli_referans_sure_sn', deger: parseFloat(f.roleli_referans_sure_sn.value) },
+        { anahtar:'roleli_kat_sayisi', deger: parseFloat(f.roleli_kat_sayisi.value) }
       ];
       let hata = null;
       for(const g of guncellemeler){
