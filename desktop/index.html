@@ -214,8 +214,8 @@
     uretimPlanlamaHafta: '', // 'YYYY-Www', boşsa render sırasında içinde bulunulan haftaya set edilir
     planlamaSatirlari: [{ kalinlik:'', yapilis:'Standart', adet:'' }],
     kurutmaModelParams: {
-      role_230_sn: 60, role_180_sn: 46.96, role_12_sn: 50,
-      telli_230_sn: 26, telli_12_sn: 50,
+      role_230_sn: 60, role_230_nemli_sn: 30, role_180_sn: 46.96, role_180_nemli_sn: 35, role_12_sn: 50,
+      telli_230_sn: 26, telli_180_sn: 35, telli_12_sn: 50,
       role_230_kapak_pct: 37.5, role_230_icli_pct: 7.5, role_230_nemli_pct: 50, role_230_fire_pct: 5,
       role_180_kuru_pct: 15, role_180_nemli_pct: 75, role_180_parca_pct: 10,
       role_12_kapak_pct: 75, role_12_nemli_pct: 15, role_12_parca_pct: 10,
@@ -2646,6 +2646,18 @@
     return `<div class="field"><label>${label}</label><input type="number" id="kparam-${field}" step="${opts.step||'any'}" min="0" data-action="kurutma-param" data-field="${field}" value="${val}"></div>`;
   }
 
+  // Tek bir materyal (230 / 180 / 1,2mm) için çevrim süresi + çıktı oranı alanlarını
+  // kalın başlıklı, çerçeveli bir blokta toplar. `icerik` zaten birleştirilmiş HTML'dir.
+  function materyalCercevesi(baslik, icerik, opts){
+    opts = opts || {};
+    return `
+      <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;${opts.sonsuz?'opacity:0.75;':''}">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">${baslik}</div>
+        ${icerik}
+      </div>
+    `;
+  }
+
   function renderKurutmaSuresiTahmini(toplamKirilim){
     const p = state.kurutmaModelParams;
     const s = kurutmaSuresiTahminHesapla(toplamKirilim, p);
@@ -2653,40 +2665,71 @@
     const kullanimRenk = oran => oran>1 ? '#b23b2e' : oran>0.85 ? '#b8860b' : '#2e7d32';
     const roleOran = kullanimOrani(s.roleToplamSaat, s.roleMevcutSaat);
     const telliOran = kullanimOrani(s.telliSaat, s.telliMevcutSaat);
+    const oranGrid = icerik => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">${icerik}</div>`;
+
+    // --- RÖLELİ sütunu ---
+    const role230 = materyalCercevesi('230', `
+      ${kParamInput('role_230_sn','230 Yaş Çevrim Süresi (sn, 4 papel)')}
+      ${kParamInput('role_230_nemli_sn','230 Nemli Çevrim Süresi (sn, 4 papel)')}
+      ${oranGrid(`
+        ${kParamInput('role_230_nemli_pct','Nemli (%)')}
+        ${kParamInput('role_230_kapak_pct','Kapak (%)')}
+        ${kParamInput('role_230_icli_pct','İçlik (%)')}
+        ${kParamInput('role_230_fire_pct','Parça (%)')}
+      `)}
+    `);
+    const role180 = materyalCercevesi('180', `
+      ${kParamInput('role_180_sn','180 Yaş Çevrim Süresi (sn, 4 papel)')}
+      ${kParamInput('role_180_nemli_sn','180 Nemli Çevrim Süresi (sn, 4 papel)')}
+      ${oranGrid(`
+        ${kParamInput('role_180_nemli_pct','Nemli (%)')}
+        ${kParamInput('role_180_kuru_pct','Kuru — 1. Geçiş (%)')}
+        ${kParamInput('role_180_parca_pct','Parça (%)')}
+      `)}
+    `);
+    const role12 = materyalCercevesi('1,2mm', `
+      ${kParamInput('role_12_sn','1,2mm Çevrim Süresi (sn, 4 papel)')}
+      ${oranGrid(`
+        ${kParamInput('role_12_kapak_pct','Kapak (%)')}
+        ${kParamInput('role_12_nemli_pct','Nemli — İşlenmiyor (%)')}
+        ${kParamInput('role_12_parca_pct','Parça (%)')}
+      `)}
+    `);
+
+    // --- TELLİ sütunu ---
+    const telli230 = materyalCercevesi('230 (Nemli)', `
+      ${kParamInput('telli_230_sn','230 Nemli Çevrim Süresi (sn, 1 papel)')}
+    `);
+    const telli180 = materyalCercevesi('180', `
+      ${kParamInput('telli_180_sn','180 Çevrim Süresi (sn, 1 papel)')}
+      <p class="hint" style="margin-top:6px;">180'i telliden geçirmek verimsiz — plana hiç dahil edilmiyor, parametre sadece referans için duruyor.</p>
+    `, {sonsuz:true});
+    const telli12 = materyalCercevesi('1,2mm', `
+      ${kParamInput('telli_12_sn','1,2mm Çevrim Süresi (sn, 1 papel)')}
+      <p class="hint" style="margin-top:6px;">Tampon durumunda telliden de verilebilir.</p>
+    `);
 
     return `
       <div class="card" style="padding:16px;margin-top:16px;">
         <h3 style="font-size:14px;margin-bottom:6px;">Kurutma Süresi Tahmini (Taslak)</h3>
         <p class="hint" style="margin-bottom:14px;">Yukarıdaki üretim planına göre röleli ve telli kurutma makinelerinde ne kadar süre gerekeceğini tahmin eder. Aşağıdaki tüm değerler değiştirilebilir parametrelerdir — röleli/telli çevrim süreleri, çıktı oranları ve genel verimsizlik payı gözlemlere göre güncellenebilir. Bu bir taslak modeldir, birlikte gözden geçirip düzeltilecektir.</p>
 
-        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px;">Çevrim Süreleri (saniye)</h4>
-        <div class="form-grid">
-          ${kParamInput('role_230_sn','Röleli — 230 (4 papel)')}
-          ${kParamInput('role_180_sn','Röleli — 180 (4 papel)')}
-          ${kParamInput('role_12_sn','Röleli — 1,2mm (4 papel)')}
-          ${kParamInput('telli_230_sn','Telli — 230 (1 papel)')}
-          ${kParamInput('telli_12_sn','Telli — 1,2mm (1 papel)')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 10px;">Röleli</h4>
+            ${role230}
+            ${role180}
+            ${role12}
+          </div>
+          <div>
+            <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 10px;">Telli</h4>
+            ${telli230}
+            ${telli180}
+            ${telli12}
+          </div>
         </div>
 
-        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px;">Röleli Çıktı Oranları (%)</h4>
-        <div class="form-grid">
-          ${kParamInput('role_230_kapak_pct','230 — Kapak')}
-          ${kParamInput('role_230_icli_pct','230 — Kuru İçlik')}
-          ${kParamInput('role_230_nemli_pct','230 — Nemli (telliye gider)')}
-          ${kParamInput('role_230_fire_pct','230 — Fire')}
-        </div>
-        <div class="form-grid">
-          ${kParamInput('role_180_kuru_pct','180 — Kuru (1. geçiş)')}
-          ${kParamInput('role_180_nemli_pct','180 — Nemli (2. geçişte kurur)')}
-          ${kParamInput('role_180_parca_pct','180 — Parça (fire)')}
-        </div>
-        <div class="form-grid">
-          ${kParamInput('role_12_kapak_pct','1,2mm — Kapak')}
-          ${kParamInput('role_12_nemli_pct','1,2mm — Nemli (işlenmiyor)')}
-          ${kParamInput('role_12_parca_pct','1,2mm — Parça (fire)')}
-        </div>
-
-        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px;">Duruş / Mola / Genel Hata Payı</h4>
+        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 8px;">Duruş / Mola / Genel Hata Payı</h4>
         <div class="form-grid">
           ${kParamInput('telli_mola_saat','Telli Günlük Mola (saat)')}
           ${kParamInput('telli_recirc_pct','Telli 230 — Kendi İçinde Tekrar Nemli (%)')}
@@ -2710,7 +2753,7 @@
             <div class="meta-row"><span>Tahmini gün sayısı</span><b>${s.telliGunSayisi.toFixed(2)} gün</b></div>
           </div>
         </div>
-        <p class="hint" style="margin-top:12px;">Not: 1,2mm papel bu taslakta tek geçişte röleli'de kurutuluyor kabul edildi (telli'ye hiç gitmiyor); 230'un nemlisi telli'de, 180'in nemlisi ise ikinci kez röleli'de kurutuluyor. Bu varsayımları birlikte gözden geçirip düzeltebiliriz.</p>
+        <p class="hint" style="margin-top:12px;">Not: 1,2mm papel bu taslakta tek geçişte röleli'de kurutuluyor kabul edildi; 230'un nemlisi telli'de, 180'in nemlisi ise ikinci kez röleli'de kurutuluyor. "230 Nemli" (röleli) ve "180" (telli) parametreleri referans için duruyor, hesaba katılmıyor — verimli plan bu yolları kullanmıyor.</p>
       </div>
     `;
   }
