@@ -219,6 +219,7 @@
     ozetHafta: '', // 'YYYY-Www', boşsa render sırasında bu haftaya set edilir
     kapasiteAltGorunum: 'hat', // 'hat' | 'kurutma'
     gunlukBaslangic: '', gunlukBitis: '',
+    uretimPlanlamaHafta: '', // 'YYYY-Www', boşsa render sırasında içinde bulunulan haftaya set edilir
     planlamaSatirlari: [{ kalinlik:'', yapilis:'Standart', adet:'' }],
     kurutmaModelParams: {
       role_230_sn: 60, role_180_sn: 46.96, role_12_sn: 50,
@@ -2092,6 +2093,43 @@
     };
   }
 
+  // Seçili haftaya (termin tarihine göre) denk gelen, henüz üretilmemiş siparişler.
+  function siparislerHaftaIcin(haftaStr){
+    const pazartesi = haftaBaslangicTarihi(haftaStr);
+    const gunler = haftaGunleri(pazartesi);
+    const ilkGun = gunler[0], sonGun = gunler[6];
+    return state.orders.filter(o => o.status==='bekliyor' && o.termin_tarihi && o.termin_tarihi>=ilkGun && o.termin_tarihi<=sonGun);
+  }
+
+  // Seçili haftanın siparişlerini panel kalınlığına göre gruplar, her grup için reçeteye göre
+  // papel ihtiyacını (papelUretimIhtiyaciHesapla) hesaplar ve hepsini kalınlık+besleme yönüne göre toplar.
+  function haftalikPapelIhtiyaciHesapla(haftaStr){
+    const siparisler = siparislerHaftaIcin(haftaStr);
+    const kalinlikMap = {};
+    siparisler.forEach(o => {
+      const k = o.kalinlik;
+      if(k==null) return;
+      if(!kalinlikMap[k]) kalinlikMap[k] = { kalinlik:k, siparisSayisi:0, toplamAdet:0 };
+      kalinlikMap[k].siparisSayisi += 1;
+      kalinlikMap[k].toplamAdet += (parseFloat(o.adet)||0);
+    });
+    const gruplar = Object.values(kalinlikMap).sort((a,b)=>a.kalinlik-b.kalinlik)
+      .map(g => Object.assign({}, g, { sonuc: papelUretimIhtiyaciHesapla(g.kalinlik, 'Standart', g.toplamAdet) }));
+    const gecerliGruplar = gruplar.filter(g=>g.sonuc);
+    const toplamM3 = gecerliGruplar.reduce((s,g)=>s+g.sonuc.hedefM3,0);
+    const toplamKirilimMap = {};
+    gecerliGruplar.forEach(g => {
+      g.sonuc.kirilim.forEach(k => {
+        const key = k.kalinlikMm+'|'+k.orientasyon;
+        if(!toplamKirilimMap[key]) toplamKirilimMap[key] = { kalinlikMm:k.kalinlikMm, orientasyon:k.orientasyon, papelSayisiGunluk:0, m3Gunluk:0 };
+        toplamKirilimMap[key].papelSayisiGunluk += k.papelSayisiGunluk;
+        toplamKirilimMap[key].m3Gunluk += k.m3Gunluk;
+      });
+    });
+    const toplamKirilim = Object.values(toplamKirilimMap).sort((a,b)=> a.orientasyon.localeCompare(b.orientasyon) || a.kalinlikMm-b.kalinlikMm);
+    return { siparisler, gruplar, toplamM3, toplamKirilim };
+  }
+
   function uretimPlanlamaHesapla(){
     const stok = papelStokuHesapla();
     const otuzGunOnce = new Date(); otuzGunOnce.setDate(otuzGunOnce.getDate()-30);
@@ -2684,6 +2722,66 @@
   }
 
   function renderUretimPlanlamaTab(rol){
+    const haftaStr = state.uretimPlanlamaHafta || tarihToHaftaStr(todayStr());
+    const pazartesi = haftaBaslangicTarihi(haftaStr);
+    const gunler = haftaGunleri(pazartesi);
+    const h = haftalikPapelIhtiyaciHesapla(haftaStr);
+
+    const secici = `
+      <div class="filters" style="margin-bottom:14px;">
+        <input type="week" value="${haftaStr}" data-action="planlama-hafta" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+        <span class="hint" style="align-self:center;">${fmtDate(gunler[0])} — ${fmtDate(gunler[6])} haftası · termin tarihi bu aralıkta olan bekleyen siparişler</span>
+      </div>`;
+
+    const grupTablosu = h.gruplar.length===0 ? `
+      <div class="card"><div class="empty"><b>Sipariş yok</b>Bu haftaya (termin tarihine göre) ait bekleyen sipariş bulunamadı.</div></div>
+    ` : `
+      <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:16px;">
+        <table>
+          <thead><tr><th>Panel Kalınlığı</th><th>Sipariş Sayısı</th><th>Toplam Adet</th><th>Kapak (230)</th><th>Tutkallı (180)</th><th>İçlik (230)</th><th>Toplam m³</th></tr></thead>
+          <tbody>
+            ${h.gruplar.map(g => g.sonuc ? `
+              <tr>
+                <td><b>${g.kalinlik} mm</b></td>
+                <td class="mono">${g.siparisSayisi}</td>
+                <td class="mono">${g.toplamAdet}</td>
+                <td class="mono">${Math.ceil(g.sonuc.kapak.papelSayisiGunluk)} adet</td>
+                <td class="mono">${Math.ceil(g.sonuc.tutkalli.papelSayisiGunluk)} adet</td>
+                <td class="mono">${Math.ceil(g.sonuc.icli.papelSayisiGunluk)} adet</td>
+                <td class="mono"><b>${g.sonuc.hedefM3.toFixed(2)}</b></td>
+              </tr>
+            ` : `
+              <tr><td><b>${g.kalinlik} mm</b></td><td class="mono">${g.siparisSayisi}</td><td class="mono">${g.toplamAdet}</td><td colspan="4" style="color:var(--muted);">Bu kalınlık için dizilim/reçete tanımlı değil</td></tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const toplamBlok = h.toplamKirilim.length>0 ? `
+      <div class="msg ok" style="font-size:14.5px;line-height:1.7;margin-bottom:16px;">
+        Bu haftanın <b>${h.siparisler.length} siparişini</b> karşılamak için toplam <b>${h.toplamM3.toFixed(2)} m³</b> kontraplak üretmek gerekiyor (2,1mm ve 1,2mm ayrı kurutulduğundan ayrı ayrı):<br>
+        ${h.toplamKirilim.map(k=>`• <b>${Math.ceil(k.papelSayisiGunluk)} adet</b> ${k.kalinlikMm} mm — ${k.orientasyon} papel (${k.m3Gunluk.toFixed(2)} m³)`).join('<br>')}
+        <br>üretilmesi (soyulup kurutulması) gerekiyor.
+      </div>
+    ` : '';
+
+    return `
+      <div class="card" style="padding:16px;margin-top:0;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Haftalık Sipariş Bazlı Papel İhtiyacı</h3>
+        <p class="hint" style="margin-bottom:12px;">Seçili haftada termin tarihi bu haftaya denk gelen bekleyen siparişler Sipariş Takip'ten otomatik çekilir. Her panel kalınlığı için gereken papel sayısı aşağıda, haftanın toplam ihtiyacı da kalınlık ve besleme yönüne (230/180) göre altta gösterilir.</p>
+        ${secici}
+        ${grupTablosu}
+        ${toplamBlok}
+      </div>
+      ${renderKurutmaSuresiTahmini(h.toplamKirilim)}
+      ${renderUretimPlanlamaManuel()}
+    `;
+  }
+
+  // Haftalık sipariş bazlı plana ek olarak, henüz sipariş sistemine girilmemiş varsayımsal
+  // üretim için elle kalınlık/adet girilebilen ikincil/opsiyonel bölüm.
+  function renderUretimPlanlamaManuel(){
     const KALINLIK_ADI = { '1.2':'1,2 mm', '2.1':'2,1 mm' };
 
     const kalinlikSecenekleri = Object.keys(state.kontraplakReceteleri)
@@ -2717,9 +2815,9 @@
     const toplamKirilim = Object.values(toplamKirilimMap).sort((a,b)=> a.orientasyon.localeCompare(b.orientasyon) || a.kalinlikMm-b.kalinlikMm);
 
     return `
-      <div class="card" style="padding:16px;margin-top:0;">
-        <h3 style="font-size:14px;margin-bottom:10px;">Kalınlığa ve Sipariş Adedine Göre Papel Üretim İhtiyacı</h3>
-        <p class="hint" style="margin-bottom:12px;">Aynı gün farklı kalınlıkta ürün üretiyorsan her biri için "Yenisini Ekle" ile ayrı satır aç; her satırın kaç m³ olacağı otomatik hesaplanır, hepsinin toplam papel ihtiyacı en altta kalınlık ve besleme yönüne (230/180) göre birleşir.</p>
+      <div class="card" style="padding:16px;margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Elle Ek Planlama (Sipariş Sistemine Girilmemiş Üretim İçin)</h3>
+        <p class="hint" style="margin-bottom:12px;">Yukarıdaki haftalık sipariş bazlı plana ek olarak, henüz Sipariş Takip'e girilmemiş varsayımsal bir üretim için burada ayrıca kalınlık/adet deneyebilirsin — bu bölüm haftadan bağımsızdır, yukarıdaki toplamlara dahil edilmez. Aynı anda birden fazla kalınlık denemek için "Yenisini Ekle" ile ayrı satır aç.</p>
         ${satirVerileri.map((v,i)=>`
           <div class="form-grid" style="margin-bottom:10px;align-items:end;">
             <div class="field">
@@ -2770,7 +2868,6 @@
           </div>
         ` : ''}
       </div>
-      ${renderKurutmaSuresiTahmini(toplamKirilim)}
     `;
   }
 
@@ -3732,6 +3829,9 @@
     }
     if(e.target.matches('[data-action="ozet-hafta"]')){
       state.ozetHafta = e.target.value; render();
+    }
+    if(e.target.matches('[data-action="planlama-hafta"]')){
+      state.uretimPlanlamaHafta = e.target.value; render();
     }
     if(e.target.matches('[data-action="gunluk-tarih-baslangic"]')){
       state.gunlukBaslangic = e.target.value; render();
