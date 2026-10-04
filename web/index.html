@@ -2676,11 +2676,21 @@
 
     const rem = gruplar.map(g => g.adet);
 
-    function planlaDizme(remMap){
+    // Dizme bir kalınlığa ancak vardiya başında, kullanacağı her kuru ara üründen en az
+    // min(kritik stok, vardiya ihtiyacı) kadar stok varsa başlayabilir (stok yokken hat başlayamaz).
+    function grupBaslayabilir(i){
+      const g = gruplar[i];
+      return Object.keys(g.talepPerPanel).every(h => {
+        const gerek = Math.min(kritik[h]||0, g.talepPerPanel[h]*g.hedef10);
+        return (S.kuru[h]||0) >= gerek - 1e-6;
+      });
+    }
+    function planlaDizme(remMap, hepsiUygun){
       const out = new Array(gruplar.length).fill(0);
       let frac = 1;
       for(let i=0;i<gruplar.length && frac>1e-9;i++){
         if(remMap[i]<=0) continue;
+        if(!hepsiUygun && !grupBaslayabilir(i)) continue;
         const maxP = Math.floor(frac*gruplar[i].hedef10 + 1e-9);
         const p = Math.min(remMap[i], maxP);
         if(p<=0) continue;
@@ -2785,29 +2795,40 @@
 
       // 2) yumuşak ihtiyaç: kritik stok + (dizme kapalıysa) sonraki dizme vardiyasının ön üretimi
       let onUretim = {};
-      if(!T.dizmeAktif && rem.some(r=>r>0)) onUretim = talepHesapla(planlaDizme(rem));
+      const dizmeCalismadi = panels.every(p => p<=0);
+      kayit.stokBekliyor = T.dizmeAktif && dizmeCalismadi && rem.some(r=>r>0);
+      if(rem.some(r=>r>0)){
+        // Dizme bu vardiyada çalışmadıysa (kapalı gün veya stok yok) tam bir vardiyalık ön üretim hedeflenir;
+        // çalıştıysa bir sonraki vardiyanın planlanan ihtiyacı için boş kalan makine süresi kullanılır.
+        const sonraki = takvim[si+1];
+        const remSonra = rem.map((r,i)=> r - panels[i]);
+        if(!T.dizmeAktif || dizmeCalismadi) onUretim = talepHesapla(planlaDizme(rem, true));
+        else if(sonraki && sonraki.dizmeAktif && remSonra.some(r=>r>0)) onUretim = talepHesapla(planlaDizme(remSonra, true));
+      }
       const hepsi = new Set(havuzlar);
-      const toplamNeeds = lam => {
+      // l1: kritik stok payı, l2: bir sonraki vardiya için ön üretim payı (önce kritik, sonra ön üretim)
+      const toplamNeeds = (l1, l2) => {
         const nd = {};
         hepsi.forEach(h => {
-          const hedef = (lam*(kritik[h]||0)) + (D[h]||0) + (lam>0 ? (onUretim[h]||0) : 0)*lam;
+          const hedef = l1*(kritik[h]||0) + (D[h]||0) + l2*(onUretim[h]||0);
           const q = Math.max(0, hedef - (S.kuru[h]||0));
           if(q>0) nd[h] = q;
         });
         return nd;
       };
-      const dene = lam => zincir(toplamNeeds(lam), lam*kritikNemli, capT, S.nemli, S.nemli180);
-      let s1 = dene(1);
-      if(s1.secR<=capR+1e-6 && s1.secT<=capT+1e-6){ sonuc = s1; }
-      else {
-        let lo=0, hi=1, en = dene(0);
-        if(!(en.secR<=capR+1e-6 && en.secT<=capT+1e-6)) en = sonuc; // sert ihtiyaç zaten sonuc
-        for(let k=0;k<14;k++){
-          const mid=(lo+hi)/2; const d=dene(mid);
-          if(d.secR<=capR+1e-6 && d.secT<=capT+1e-6){ lo=mid; en=d; } else hi=mid;
-        }
-        sonuc = en;
+      const dene = (l1, l2) => zincir(toplamNeeds(l1,l2), l1*kritikNemli, capT, S.nemli, S.nemli180);
+      const sigar = x => x.secR<=capR+1e-6 && x.secT<=capT+1e-6;
+      let enIyi = null;
+      const tam = dene(1,1);
+      if(sigar(tam)){ enIyi = tam; }
+      else if(sigar(dene(1,0))){
+        let lo=0, hi=1; enIyi = dene(1,0);
+        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=dene(1,mid); if(sigar(d)){ lo=mid; enIyi=d; } else hi=mid; }
+      } else {
+        let lo=0, hi=1; enIyi = sigar(dene(0,0)) ? dene(0,0) : sonuc;
+        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=dene(mid,0); if(sigar(d)){ lo=mid; enIyi=d; } else hi=mid; }
       }
+      sonuc = enIyi;
 
       // 3) stok güncelle
       Object.entries(sonuc.uretim).forEach(([h,q]) => { S.kuru[h] = (S.kuru[h]||0)+q; });
@@ -2861,7 +2882,9 @@
   }
 
   // ---------- Hat planı: stok/parametre saklama + ekranlar ----------
-  const URETIM_PLAN_LS_KEY = 'akis_uretim_plani_v1';
+  const URETIM_PLAN_LS_KEY = 'akis_uretim_plani_v2';
+  const URETIM_PLAN_LS_KEY_ESKI = 'akis_uretim_plani_v1'; // eski sürümde parametreler de saklanıyordu; yalnız stok/kritik alınır
+  let URETIM_VARSAYILAN_PARAMS = null;
   const URETIM_STOK_SATIRLARI = [
     { key:'yas_230', ad:'Yaş 230 papel', kritik:false },
     { key:'yas_180', ad:'Yaş 180 papel', kritik:false },
@@ -2880,18 +2903,27 @@
     return k;
   }
   function uretimPlaniYukle(){
+    URETIM_VARSAYILAN_PARAMS = Object.assign({}, state.kurutmaModelParams);
     try{
-      const ham = window.localStorage.getItem(URETIM_PLAN_LS_KEY);
+      let ham = window.localStorage.getItem(URETIM_PLAN_LS_KEY);
+      let eski = false;
+      if(!ham){ ham = window.localStorage.getItem(URETIM_PLAN_LS_KEY_ESKI); eski = true; }
       if(!ham) return;
       const o = JSON.parse(ham);
-      if(o && o.params) Object.assign(state.kurutmaModelParams, o.params);
+      if(!eski && o && o.params) Object.assign(state.kurutmaModelParams, o.params);
       if(o && o.stok) state.uretimStok = o.stok;
       if(o && o.kritik) Object.assign(state.uretimKritik, o.kritik);
     }catch(e){ /* depolama yoksa varsayılanlarla devam */ }
   }
   function uretimPlaniKaydet(){
     try{
-      window.localStorage.setItem(URETIM_PLAN_LS_KEY, JSON.stringify({ params: state.kurutmaModelParams, stok: state.uretimStok, kritik: state.uretimKritik }));
+      // Sadece kullanıcının varsayılandan değiştirdiği parametreler saklanır; böylece sonradan
+      // güncellenen varsayılanlar (örn. vardiya saati) eski kayıtlarla ezilmez.
+      const fark = {};
+      Object.keys(state.kurutmaModelParams).forEach(k => {
+        if(!URETIM_VARSAYILAN_PARAMS || String(state.kurutmaModelParams[k]) !== String(URETIM_VARSAYILAN_PARAMS[k])) fark[k] = state.kurutmaModelParams[k];
+      });
+      window.localStorage.setItem(URETIM_PLAN_LS_KEY, JSON.stringify({ params: fark, stok: state.uretimStok, kritik: state.uretimKritik }));
     }catch(e){ /* sessiz geç */ }
   }
   function uretimInputId(onek, key){ return onek+'-'+String(key).replace(/[^a-zA-Z0-9]/g,'_'); }
@@ -3109,7 +3141,7 @@
                     <td class="mono">${soyma.length ? soyma.join('<br>') : '<span class="hint">—</span>'}</td>
                     <td>${opSatirlari(v, v.role)}<span class="hint">Doluluk %${yuzde(v.secR, v.capR)}</span></td>
                     <td>${opSatirlari(v, v.telli)}<span class="hint">Doluluk %${yuzde(v.secT, v.capT)}</span></td>
-                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
+                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.stokBekliyor ? '<span style="color:var(--red);font-weight:600;">Başlayamaz</span><br><span class="hint">Kritik ara ürün stoğu yok; kurutma stok hazırlıyor.</span>' : v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
                     <td class="mono" style="font-size:11.5px;line-height:1.6;">${stokSatir.join('<br>')}</td>
                   </tr>`;
                 }).join('')}
