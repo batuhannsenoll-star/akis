@@ -2850,29 +2850,31 @@
       };
       const evalSeviye = (krMap, tp, l2) => zincir(toplamNeeds(krMap,l2), tp, capT, S.nemli, S.nemli180);
       const sigar = x => x.secR<=capR+1e-6 && x.secT<=capT+1e-6;
-      const sonKad = kademeler.length ? kademeler[kademeler.length-1] : { kr:{}, tampon:0 };
       let enIyi = null, kabul = { kr:{}, tp:0, l2:0 };
-      const tam = evalSeviye(sonKad.kr, sonKad.tampon, 1);
-      if(sigar(tam)){ enIyi = tam; kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:1 }; }
-      else if(sigar(evalSeviye(sonKad.kr, sonKad.tampon, 0))){
-        let lo=0, hi=1; enIyi = evalSeviye(sonKad.kr, sonKad.tampon, 0); kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:0 };
-        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=evalSeviye(sonKad.kr, sonKad.tampon, mid); if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:mid }; } else hi=mid; }
-      } else {
-        const bazD = evalSeviye({},0,0);
-        enIyi = sigar(bazD) ? bazD : sonuc;
+      // Öncelik: 1) bir sonraki vardiyada dizmenin gerçekten kullanacağı ara ürünler (kalınlık geçişinde sıradaki
+      // kalınlığın ara ürünü de dahil), 2) sıradaki kalınlıkların kritik stok hedefleri.
+      const bazD = evalSeviye({}, 0, 0);
+      enIyi = sigar(bazD) ? bazD : sonuc;
+      const tamL2 = evalSeviye({}, 0, 1);
+      if(sigar(tamL2)){
+        enIyi = tamL2; kabul = { kr:{}, tp:0, l2:1 };
         let onceki = { kr:{}, tampon:0 };
         for(const kd of kademeler){
-          const tamK = evalSeviye(kd.kr, kd.tampon, 0);
-          if(sigar(tamK)){ enIyi = tamK; onceki = kd; kabul = { kr:kd.kr, tp:kd.tampon, l2:0 }; continue; }
+          const tamK = evalSeviye(kd.kr, kd.tampon, 1);
+          if(sigar(tamK)){ enIyi = tamK; onceki = kd; kabul = { kr:kd.kr, tp:kd.tampon, l2:1 }; continue; }
           let lo=0, hi=1;
           for(let k=0;k<14;k++){
             const mid=(lo+hi)/2; const kr = {};
             Object.keys(kd.kr).forEach(h => { const a0=onceki.kr[h]||0; kr[h] = a0 + mid*(kd.kr[h]-a0); });
-            const d = evalSeviye(kr, onceki.tampon + mid*(kd.tampon-onceki.tampon), 0);
-            if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr, tp:onceki.tampon + mid*(kd.tampon-onceki.tampon), l2:0 }; } else hi=mid;
+            const tp = onceki.tampon + mid*(kd.tampon-onceki.tampon);
+            const d = evalSeviye(kr, tp, 1);
+            if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr, tp, l2:1 }; } else hi=mid;
           }
           break;
         }
+      } else {
+        let lo=0, hi=1;
+        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=evalSeviye({},0,mid); if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr:{}, tp:0, l2:mid }; } else hi=mid; }
       }
       // Telli boşta kalmasın: röleliyi hiç yormadan, telli'nin boş süresiyle 1,2 mm kapak stoğu birikir
       // (10/18 mm gibi 1,2 mm kullanmayan kalınlıklar çalışırken sıradaki 1,2 mm'li kalınlıklar için).
