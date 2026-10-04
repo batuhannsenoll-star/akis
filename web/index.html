@@ -1038,8 +1038,7 @@
         <p class="hint" style="margin-bottom:16px;">${isEdit?'Değişiklikler kayıt altına alınır ve düzenleme tarihi görünür olur.':'Sipariş bilgilerini girin — m³ otomatik hesaplanır.'}</p>
         <form id="order-form">
           <div class="form-grid">
-            <div class="field"><label>Sipariş Tarihi</label><input type="date" name="siparis_tarihi" required value="${o.siparis_tarihi||todayStr()}"></div>
-            <div class="field"><label>Termin Tarihi</label><input type="date" name="termin_tarihi" required value="${o.termin_tarihi||''}"></div>
+            <div class="field full"><label>Üretilecek Hafta</label><input type="week" name="hafta" required value="${o.termin_tarihi ? tarihToHaftaStr(o.termin_tarihi) : tarihToHaftaStr(todayStr())}"><div class="hint">Termin tarihi otomatik olarak seçilen haftanın son günü (Pazar) olur.</div></div>
             <div class="field full"><label>Cins</label><select name="cins" required>
               <option value="" disabled ${!o.cins?'selected':''}>Seçiniz…</option>
               ${CINS_OPTIONS.map(c=>`<option value="${escapeHtml(c)}" ${o.cins===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
@@ -3995,9 +3994,16 @@
 
     if(e.target.id==='order-form'){
       const f = e.target;
+      if(!f.hafta.value){
+        state.toast = {type:'err', text:'Lütfen üretilecek haftayı seçin.'};
+        render();
+        return;
+      }
+      const haftaSonu = haftaGunleri(haftaBaslangicTarihi(f.hafta.value))[6];
+      const duzenleniyor = !!(state.modal && state.modal.type==='edit');
       const data = {
-        siparis_tarihi: f.siparis_tarihi.value,
-        termin_tarihi: f.termin_tarihi.value,
+        siparis_tarihi: duzenleniyor ? (state.modal.order.siparis_tarihi || todayStr()) : todayStr(),
+        termin_tarihi: haftaSonu,
         cins: f.cins.value,
         en: parseFloat(f.en.value),
         boy: parseFloat(f.boy.value),
