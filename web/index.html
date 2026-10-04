@@ -232,7 +232,7 @@
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
       telli_230_kapak_pct: 25,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
-      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25
+      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25, dolgu_adet: 25, dolgu_kalinlik: 12, dolgu_kapak_kat: 2
     },
     uretimStok: {}, // eldeki ara ürün stoğu (adet), anahtarlar URETIM_STOK_SATIRLARI'nda
     uretimKritik: {}, // kritik (asgari) ara ürün stoğu (adet)
@@ -2666,6 +2666,14 @@
     });
     const havuzlar = new Set();
     gruplar.forEach(g => Object.keys(g.talepPerPanel).forEach(h => havuzlar.add(h)));
+    // Dolgu hattı: vardiyada ortalama `dolgu_adet` bitmiş panel (varsayılan 12 mm). Tutkallı kısmı parça 180'den, içlik kısmı
+    // parça 1,2 mm'den yapıldığı için hesaba girmez; yalnız kapak (2,1 mm 230) kuru stoktan düşer.
+    const dolguAdet = Math.max(0, n('dolgu_adet',25));
+    const dolguKapakKat = Math.max(0, n('dolgu_kapak_kat',2));
+    const dolguKalinlik = n('dolgu_kalinlik',12);
+    const iDolgu = gruplar.findIndex(g => Math.abs(parseFloat(g.kalinlik)-dolguKalinlik) < 1e-6);
+    const DOLGU_KAPAK = '230|2.1|kapak';
+    if(iDolgu>=0 && dolguAdet>0) havuzlar.add(DOLGU_KAPAK);
 
     // başlangıç stokları
     const S = { yas230: girdi.stok['yas_230']||0, yas180: girdi.stok['yas_180']||0, yas12: girdi.stok['yas_12']||0,
@@ -2677,6 +2685,8 @@
     const kritikNemli = girdi.kritik['nemli_230']||0;
 
     const rem = gruplar.map(g => g.adet);
+    const dizmeBasladi = new Array(gruplar.length).fill(false); // dizme hattında en az bir kez çalışmış kalınlıklar
+    let oncDolgu = 0;
 
     // Dizme bir kalınlığa ancak vardiya başında, kullanacağı her kuru ara üründen en az
     // "başlama stoğu" (dizme_baslama_saat saatlik tüketim) kadar stok varsa başlayabilir.
@@ -2696,8 +2706,8 @@
     let sira = [], hazirDegil = [];
     function siralaGruplar(capTx){
       const idx = gruplar.map((_,i)=>i).filter(i=>rem[i]>0);
-      const devam = idx.filter(i=>rem[i]<gruplar[i].adet);
-      const kalan = idx.filter(i=>rem[i]>=gruplar[i].adet);
+      const devam = idx.filter(i=>dizmeBasladi[i]);
+      const kalan = idx.filter(i=>!dizmeBasladi[i]);
       const hazir = kalan.filter(i=>grupBaslayabilir(i));
       const degil = kalan.filter(i=>!grupBaslayabilir(i));
       const sure = {};
@@ -2805,21 +2815,29 @@
 
       // 1) dizme planı ve fizibilite (sert ihtiyaç)
       siralaGruplar(capT);
+      // dolgu hattı: bu vardiyada üretilecek panel (başlangıçta kapak stoğu yoksa başlayamaz; önceki vardiya çalıştıysa akar)
+      let dolguP = 0;
+      if(iDolgu>=0 && dolguAdet>0 && T.dizmeAktif && rem[iDolgu]>0){
+        const gerekK = Math.max(1, dolguKapakKat*dolguAdet*basSaat/8);
+        if(oncDolgu>0 || (S.kuru[DOLGU_KAPAK]||0) >= gerekK-1e-6) dolguP = Math.min(rem[iDolgu], dolguAdet);
+      }
+      const remDz = rem.slice(); if(iDolgu>=0) remDz[iDolgu] -= dolguP;
+      const dolguEkle = Dm => { if(dolguP>0) Dm[DOLGU_KAPAK] = (Dm[DOLGU_KAPAK]||0) + dolguKapakKat*dolguP; return Dm; };
       let panels = new Array(gruplar.length).fill(0);
       let D = {};
       let sonuc = null;
-      const planlanan = T.dizmeAktif ? planlaDizme(rem) : new Array(gruplar.length).fill(0);
+      const planlanan = T.dizmeAktif ? planlaDizme(remDz) : new Array(gruplar.length).fill(0);
       const hardNeeds = Dm => { const nd={}; Object.keys(Dm).forEach(h => { const q=Math.max(0,Dm[h]-(S.kuru[h]||0)); if(q>0) nd[h]=q; }); return nd; };
       let bulundu = false;
       for(let adim=20; adim>=0; adim--){
         const scale = adim/20;
         panels = planlanan.map(p => p<=0 ? 0 : (p>=10 ? Math.floor(p*scale/10)*10 : Math.floor(p*scale)));
-        D = talepHesapla(panels);
+        D = dolguEkle(talepHesapla(panels));
         const hn = hardNeeds(D);
         const s = zincir(hn, 0, capT, S.nemli, S.nemli180);
         if(s.secR <= capR+1e-6 && s.secT <= capT+1e-6){ sonuc = s; bulundu = true; if(adim<20) kayit.kisitlandi = true; break; }
       }
-      if(!bulundu){ panels = new Array(gruplar.length).fill(0); D = {}; sonuc = zincir({},0,capT,S.nemli,S.nemli180); kayit.kisitlandi = true; }
+      if(!bulundu){ panels = new Array(gruplar.length).fill(0); D = dolguEkle({}); sonuc = zincir(Object.keys(D).reduce((a,h)=>{ const q=Math.max(0,D[h]-(S.kuru[h]||0)); if(q>0) a[h]=q; return a; },{}),0,capT,S.nemli,S.nemli180); kayit.kisitlandi = true; }
 
       // 2) yumuşak ihtiyaç: kritik stok + (dizme kapalıysa) sonraki dizme vardiyasının ön üretimi
       let onUretim = {};
@@ -2830,10 +2848,11 @@
         // Dizme bu vardiyada çalışmadıysa (kapalı gün veya stok yok) tam bir vardiyalık ön üretim hedeflenir;
         // çalıştıysa bir sonraki vardiyanın planlanan ihtiyacı için boş kalan makine süresi kullanılır.
         const sonraki = takvim[si+1];
-        const remSonra = rem.map((r,i)=> r - panels[i]);
-        if(!T.dizmeAktif || dizmeCalismadi) onUretim = talepHesapla(planlaDizme(rem, true));
+        const remSonra = remDz.map((r,i)=> r - panels[i]);
+        if(!T.dizmeAktif || dizmeCalismadi) onUretim = talepHesapla(planlaDizme(remDz, true));
         else if(sonraki && sonraki.dizmeAktif && remSonra.some(r=>r>0)) onUretim = talepHesapla(planlaDizme(remSonra, true));
       }
+      if(iDolgu>=0 && dolguAdet>0 && remDz[iDolgu]-panels[iDolgu]>0 && (T.dizmeAktif || (takvim[si+1] && takvim[si+1].dizmeAktif))) onUretim[DOLGU_KAPAK] = (onUretim[DOLGU_KAPAK]||0) + dolguKapakKat*dolguAdet;
       // Yumuşak ihtiyaç öncelik kademeleri: sıradaki her kalınlık için kullandığı ara ürünlerin kritik stoğa
       // çıkarılması (devam eden / başlayabilen / hazırlığı kısa olan önce), en sonda sonraki vardiya ön üretimi.
       const kademeler = [];
@@ -2914,8 +2933,11 @@
       panels.forEach((p,i) => { if(p>0){
         kayit.dizme.push({ kalinlik:gruplar[i].kalinlik, panel:p, kat:p*gruplar[i].katSayisi });
         kayit.dizmeKat += p*gruplar[i].katSayisi; kayit.dizmeM3 += p*gruplar[i].panelM3; toplamPanel += p;
-        rem[i] -= p;
+        rem[i] -= p; dizmeBasladi[i] = true;
       }});
+      kayit.dolgu = dolguP; kayit.dolguKalinlik = dolguKalinlik; kayit.dolguM3 = (iDolgu>=0 ? dolguP*gruplar[iDolgu].panelM3 : 0);
+      if(dolguP>0) rem[iDolgu] -= dolguP;
+      oncDolgu = dolguP;
       kayit.soyma = soyma;
       kayit.secR = sonuc.secR; kayit.secT = sonuc.secT; kayit.capR = capR; kayit.capT = capT;
       kayit.verim = verim;
@@ -2938,13 +2960,13 @@
       kayit.stokSon = {}; Object.keys(S.kuru).forEach(h => kayit.stokSon[h] = S.kuru[h]);
       kayit.nemliSon = S.nemli['2.1']||0;
       kayit.kritik = kritik;
-      if(T.dizmeAktif && toplamPanel===0 && rem.some(r=>r>0)){ hareketsiz++; } else if(toplamPanel>0){ hareketsiz = 0; }
+      if(T.dizmeAktif && toplamPanel===0 && dolguP===0 && rem.some(r=>r>0)){ hareketsiz++; } else if(toplamPanel>0 || dolguP>0){ hareketsiz = 0; }
       vardiyalar.push(kayit);
       if(rem.every(r=>r<=0)){ bitti = true; bitisIdx = si; }
       if(hareketsiz>=6){ uyari.push('Dizme hattı art arda 6 vardiya hiç üretemedi — kurutma kapasitesi veya girdiler yetersiz, plan durduruldu.'); break; }
     }
     if(!bitti && !uyari.length) uyari.push('Plan '+maxGun+' gün içinde tamamlanamadı.');
-    const toplamM3 = vardiyalar.reduce((s,v)=>s+v.dizmeM3,0);
+    const toplamM3 = vardiyalar.reduce((s,v)=>s+v.dizmeM3+(v.dolguM3||0),0);
     return { vardiyalar, gruplar, bitti, bitisIdx, baslangicIdx:basIdx, uyari, toplamM3, kalan: rem.slice(), verim, katVardiya };
   }
 
@@ -3089,6 +3111,9 @@
           ${kParamInput('pazar_dizme_aktif','Pazar Dizme Hattı (1=çalışır, 0=kapalı)')}
           ${kParamInput('vardiya1_baslangic','1. Vardiya Başlangıç Saati (0-23)')}
           ${kParamInput('dizme_baslama_saat','Dizme Başlama Stoğu (saatlik tüketim)')}
+          ${kParamInput('dolgu_adet','Dolgu Hattı Vardiyalık Üretim (adet)')}
+          ${kParamInput('dolgu_kalinlik','Dolgu Hattı Kalınlığı (mm)')}
+          ${kParamInput('dolgu_kapak_kat','Dolgu Kontraplak Başına 2,1 mm Kapak (adet)')}
         </div>
       </div>
     `;
@@ -3195,7 +3220,7 @@
               ${GUN_ADLARI[dow]} · ${fmtDate(tarih)} ${pazar ? `<span class="hint" style="font-weight:400;">· kurutma ${sayi(p.pazar_kurutma_saat)} saat, dizme ${sayi(p.pazar_dizme_aktif)>0.5?'çalışır':'kapalı — ara ürün stoğu yapılır'}</span>` : ''}
             </div>
             <table style="font-size:12.5px;">
-              <thead><tr><th>Vardiya</th><th>Soyma (yaş papel)</th><th>Röleli</th><th>Telli</th><th>Dizme</th><th>Vardiya Sonu Ara Stok</th></tr></thead>
+              <thead><tr><th>Vardiya</th><th>Soyma (yaş papel)</th><th>Röleli</th><th>Telli</th><th>Dizme</th><th>Dolgu</th><th>Vardiya Sonu Ara Stok</th></tr></thead>
               <tbody>
                 ${liste.map(v => {
                   const soyma = [];
@@ -3212,6 +3237,7 @@
                     <td>${opSatirlari(v, v.role)}<span class="hint">Doluluk %${yuzde(v.secR, v.capR)}</span></td>
                     <td>${opSatirlari(v, v.telli)}<span class="hint">Doluluk %${yuzde(v.secT, v.capT)}</span></td>
                     <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.stokBekliyor ? `<span style="color:var(--red);font-weight:600;">Başlayamaz</span><br><span class="hint">Başlama stoğu yok; kurutma ara ürün hazırlıyor${v.hazirlanan && v.hazirlanan.length ? ' (öncelik: '+v.hazirlanan.join(', ')+' mm)' : ''}.</span>` : v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
+                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.dolgu>0 ? `<div class="mono"><b>${v.dolguKalinlik} mm × ${v.dolgu}</b></div><span class="hint">${v.dolguM3.toFixed(1)} m³</span>` : '<span class="hint">—</span>')}</td>
                     <td class="mono" style="font-size:11.5px;line-height:1.6;">${stokSatir.join('<br>')}</td>
                   </tr>`;
                 }).join('')}
@@ -3229,7 +3255,7 @@
     return `
       <div class="card" style="padding:16px;margin-top:16px;">
         <h3 style="font-size:14px;margin-bottom:6px;">Hat Hat Üretim Planı (Vardiya Bazlı)</h3>
-        <p class="hint" style="margin-bottom:12px;">Soyma → Röleli / Telli → Dizme hatları birbirine bağlı hesaplanır: soymadan çıkan yaş papel röleliye, röleliden çıkan nemli 230 telliye gider. Dizme hattı vardiyalık hedefi (1329 kat referansı, 10'a yuvarlanmış) sipariş sırasıyla ve kalınlık sırasıyla doldurulur; her vardiyada dizmenin tüketeceği kuru papel, eldeki stok düşülerek makinelere dağıtılır. Başlamış bir kalınlık bitmeden başka kalınlığa geçilmez; ara ürünü hazır olmayan kalınlıklar beklerken, hazırlığı en kısa olan kalınlıkların ara ürünleri öncelikli üretilir. Kritik stok dizmeyi durdurmaz; yalnız hangi ara ürünün önce üretileceğini belirler. Soyma kapasitesi sınırsız kabul edilir; sadece o vardiyada soyulması gereken yaş papel gösterilir.</p>
+        <p class="hint" style="margin-bottom:12px;">Soyma → Röleli / Telli → Dizme hatları birbirine bağlı hesaplanır: soymadan çıkan yaş papel röleliye, röleliden çıkan nemli 230 telliye gider. Dizme hattı vardiyalık hedefi (1329 kat referansı, 10'a yuvarlanmış) sipariş sırasıyla ve kalınlık sırasıyla doldurulur; her vardiyada dizmenin tüketeceği kuru papel, eldeki stok düşülerek makinelere dağıtılır. Başlamış bir kalınlık bitmeden başka kalınlığa geçilmez; ara ürünü hazır olmayan kalınlıklar beklerken, hazırlığı en kısa olan kalınlıkların ara ürünleri öncelikli üretilir. Kritik stok dizmeyi durdurmaz; yalnız hangi ara ürünün önce üretileceğini belirler. Dolgu hattı (varsayılan 12 mm × 25 adet/vardiya) ilgili kalınlığın siparişinden düşer; yalnız 2,1 mm kapak tüketir (tutkallı parça 180, içlik parça 1,2 mm'den yapıldığı için hesaba girmez). Soyma kapasitesi sınırsız kabul edilir; sadece o vardiyada soyulması gereken yaş papel gösterilir.</p>
         <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 8px;">Eldeki Stok ve Kritik Stok</h4>
         ${stokTablosu}
         ${baslangicSecici}
@@ -3261,7 +3287,7 @@
     ` : `
       <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:16px;">
         <table>
-          <thead><tr><th>Panel Kalınlığı</th><th>Sipariş Sayısı</th><th>Toplam Adet</th><th>Kapak (230)</th><th>Tutkallı (180)</th><th>İçlik (230)</th><th>Toplam m³</th></tr></thead>
+          <thead><tr><th>Kontraplak Kalınlığı</th><th>Sipariş Sayısı</th><th>Toplam Adet</th><th>Kapak (230)</th><th>Tutkallı (180)</th><th>İçlik (230)</th><th>Toplam m³</th></tr></thead>
           <tbody>
             ${h.gruplar.map(g => g.sonuc ? `
               <tr>
@@ -3292,7 +3318,7 @@
     return `
       <div class="card" style="padding:16px;margin-top:0;">
         <h3 style="font-size:14px;margin-bottom:10px;">Haftalık Sipariş Bazlı Papel İhtiyacı</h3>
-        <p class="hint" style="margin-bottom:12px;">Seçili haftada termin tarihi bu haftaya denk gelen bekleyen siparişler Sipariş Takip'ten otomatik çekilir. Her panel kalınlığı için gereken papel sayısı aşağıda, haftanın toplam ihtiyacı da kalınlık ve besleme yönüne (230/180) göre altta gösterilir.</p>
+        <p class="hint" style="margin-bottom:12px;">Seçili haftada termin tarihi bu haftaya denk gelen bekleyen siparişler Sipariş Takip'ten otomatik çekilir. Her kontraplak kalınlığı için gereken papel sayısı aşağıda, haftanın toplam ihtiyacı da kalınlık ve besleme yönüne (230/180) göre altta gösterilir.</p>
         ${secici}
         ${grupTablosu}
         ${toplamBlok}
