@@ -230,7 +230,7 @@
       role_230_nemli_pct: 75, role_230_kapak_pct: 25, role_230_icli_pct: 0, role_230_fire_pct: 0,
       role_180_nemli_pct: 100, role_180_kuru_pct: 0, role_180_parca_pct: 0,
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
-      telli_230_kapak_pct: 25, telli_230_ikinci_sn: 30, telli_230_tekrar_pct: 0,
+      telli_230_kapak_pct: 25, telli_230_ikinci_sn: 30, telli_230_tekrar_pct: 0, yas_palet_21: 300, yas_palet_23: 0, yas_palet_12: 0,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
       dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25, dolgu_adet: 25, dolgu_kalinlik: 12, dolgu_kapak_kat: 2
     },
@@ -2653,6 +2653,10 @@
     const sR12 = n('role_12_sn',50)/4;
     const y12 = Math.max(0.01, n('role_12_kapak_pct',40)/100);
     const sT230 = n('telli_230_sn',30), sT12 = n('telli_12_sn',50);
+    // Yaş palet: röleliye verilen yaş papel palet bitmeden kaldırılmaz → yaş girdi tam palet katına yukarı yuvarlanır (0 = serbest).
+    const palet21 = Math.max(0, n('yas_palet_21',300)), palet23 = Math.max(0, n('yas_palet_23',0)), palet12 = Math.max(0, n('yas_palet_12',0));
+    const paletKalinlik = t => t==='2.1' ? palet21 : (t==='2.3' ? palet23 : 0);
+    const palYuvarla = (q, pal) => (pal>0 && q>1e-9) ? Math.ceil(q/pal - 1e-9)*pal : q;
     // Telliden 1. geçişte tekrar nemli çıkan oran: bu papeller 2. geçişte (farklı hızla) yeniden verilir.
     const rT = Math.min(0.95, Math.max(0, n('telli_230_tekrar_pct',0)/100)), sT230b = n('telli_230_ikinci_sn', sT230);
     const molaDk = n('telli_mola_dk',90);
@@ -2746,7 +2750,7 @@
 
     // İhtiyaç (üretilecek kuru adet) → makine işleri ve süreleri
     function zincir(needs, tampon, capT, nemliS, nemli180S){
-      const ops = { y230:0, y180nemli:0, y180tam:0, y12r:0, y12t:0, n230:0, n230b:0 };
+      const ops = { y230:0, y180nemli:0, y180tam:0, y12r:0, y12t:0, n230:0, n230b:0, y180pal:0, y180srb:0 };
       const uretim = {}; const nemliSon = Object.assign({}, nemliS);
       let secR = 0, secT = 0, y180ham = 0, y12ham = 0;
       const kuruEkle = (h,q) => { uretim[h]=(uretim[h]||0)+q; };
@@ -2768,6 +2772,7 @@
           y=yy;
         }
         if(y<=0 && nn<=0) return;
+        y = palYuvarla(y, paletKalinlik(t));
         kuruEkle('230|'+t+'|kapak', rK*y + tK*nn);
         kuruEkle('230|'+t+'|icli', rI*y + tI*nn);
         nemliSon[t] = Sn + rN*y - nn;
@@ -2781,10 +2786,13 @@
         const N = needs[h]; if(N<=0) return;
         const ham = N/(1-p180);
         const nemliKullan = Math.min(ham, nemli180Kalan); nemli180Kalan -= nemliKullan;
-        ops.y180nemli += nemliKullan; ops.y180tam += (ham-nemliKullan);
-        secR += nemliKullan*sR180b + (ham-nemliKullan)*(sR180a+sR180b);
-        kuruEkle(h, N);
-        y180ham += ham - nemliKullan;
+        const tam = ham - nemliKullan;
+        const tamQ = palYuvarla(tam, h==='180|2.1' ? palet21 : (h==='180|2.3' ? palet23 : 0));
+        ops.y180nemli += nemliKullan; ops.y180tam += tamQ;
+        { const pl = h==='180|2.1' ? palet21 : (h==='180|2.3' ? palet23 : 0); if(pl>0) ops.y180pal += tamQ/pl; else ops.y180srb += tamQ; }
+        secR += nemliKullan*sR180b + tamQ*(sR180a+sR180b);
+        kuruEkle(h, N + (tamQ-tam)*(1-p180));
+        y180ham += tamQ;
       });
       // 1,2mm: önce telli'nin boş kalan süresi, kalanı röleli
       const N12 = needs['230|1.2']||0;
@@ -2792,10 +2800,11 @@
         const ham = N12/y12;
         const telliKalanSn = Math.max(0, capT - secT);
         const telliGirdi = Math.min(ham, telliKalanSn/sT12);
-        ops.y12t = telliGirdi; ops.y12r = ham - telliGirdi;
-        secT += telliGirdi*sT12; secR += (ham-telliGirdi)*sR12;
-        kuruEkle('230|1.2', N12);
-        y12ham = ham;
+        const rHam = palYuvarla(ham - telliGirdi, palet12);
+        ops.y12t = telliGirdi; ops.y12r = rHam;
+        secT += telliGirdi*sT12; secR += rHam*sR12;
+        kuruEkle('230|1.2', N12 + (rHam-(ham-telliGirdi))*y12);
+        y12ham = telliGirdi + rHam;
       }
       return { ops, uretim, nemliSon, secR, secT, nemli180Kalan, yas: { y230:ops.y230, y180:y180ham, y12:y12ham } };
     }
@@ -2824,6 +2833,11 @@
         if(oncDolgu>0 || (S.kuru[DOLGU_KAPAK]||0) >= gerekK-1e-6) dolguP = Math.min(rem[iDolgu], dolguAdet);
       }
       const remDz = rem.slice(); if(iDolgu>=0) remDz[iDolgu] -= dolguP;
+      // Kalan siparişlerin her ara üründen toplam ihtiyacı: kritik stok hedefi bunu aşamaz (fazla stok yapılmaz).
+      const remNeed = {};
+      gruplar.forEach((g,i) => { if(rem[i]>0) Object.entries(g.talepPerPanel).forEach(([h,c]) => { remNeed[h] = (remNeed[h]||0) + c*rem[i]; }); });
+      if(iDolgu>=0 && dolguAdet>0 && rem[iDolgu]>0) remNeed[DOLGU_KAPAK] = (remNeed[DOLGU_KAPAK]||0) + dolguKapakKat*rem[iDolgu];
+      const tamponCap = (remNeed['230|2.1|kapak']||0) + (remNeed['230|2.1|icli']||0);
       const dolguEkle = Dm => { if(dolguP>0) Dm[DOLGU_KAPAK] = (Dm[DOLGU_KAPAK]||0) + dolguKapakKat*dolguP; return Dm; };
       let panels = new Array(gruplar.length).fill(0);
       let D = {};
@@ -2867,13 +2881,13 @@
       const toplamNeeds = (krMap, l2) => {
         const nd = {};
         havuzlar.forEach(h => {
-          const hedef = (krMap[h]||0) + (D[h]||0) + l2*(onUretim[h]||0);
+          const hedef = Math.min(Math.max(remNeed[h]||0, D[h]||0), (krMap[h]||0) + (D[h]||0) + l2*(onUretim[h]||0));
           const q = Math.max(0, hedef - (S.kuru[h]||0));
           if(q>0) nd[h] = q;
         });
         return nd;
       };
-      const evalSeviye = (krMap, tp, l2) => zincir(toplamNeeds(krMap,l2), tp, capT, S.nemli, S.nemli180);
+      const evalSeviye = (krMap, tp, l2) => zincir(toplamNeeds(krMap,l2), Math.min(tp, tamponCap), capT, S.nemli, S.nemli180);
       const sigar = x => x.secR<=capR+1e-6 && x.secT<=capT+1e-6;
       let enIyi = null, kabul = { kr:{}, tp:0, l2:0 };
       // Öncelik: 1) bir sonraki vardiyada dizmenin gerçekten kullanacağı ara ürünler (kalınlık geçişinde sıradaki
@@ -2904,8 +2918,8 @@
       // Telli boşta kalmasın: röleliyi hiç yormadan, telli'nin boş süresiyle 1,2 mm kapak stoğu birikir
       // (10/18 mm gibi 1,2 mm kullanmayan kalınlıklar çalışırken sıradaki 1,2 mm'li kalınlıklar için).
       { const h12 = '230|1.2';
-        if(havuzlar.has(h12) && sira.some(i=>gruplar[i].talepPerPanel[h12]) && (kabul.kr[h12]||0) < (kritik[h12]||0)){
-          const k0 = kabul.kr[h12]||0, k1 = kritik[h12]||0, taban = enIyi.ops.y12r;
+        if(havuzlar.has(h12) && sira.some(i=>gruplar[i].talepPerPanel[h12]) && (kabul.kr[h12]||0) < Math.min(kritik[h12]||0, remNeed[h12]||0)){
+          const k0 = kabul.kr[h12]||0, k1 = Math.min(kritik[h12]||0, remNeed[h12]||0), taban = enIyi.ops.y12r;
           let lo=0, hi=1, en=null;
           for(let k=0;k<14;k++){
             const mid=(lo+hi)/2; const kr = Object.assign({}, kabul.kr); kr[h12] = k0 + mid*(k1-k0);
@@ -2946,12 +2960,13 @@
       const o = sonuc.ops;
       const clock = sn => sn/verim;
       let t0 = vardiya1Bas + (T.vardiya-1)*8;
-      const mkOp = (liste, ad, adet, sn) => { if(adet>0.5){ liste.push({ ad, adet:Math.ceil(adet), sureSn:clock(sn) }); } };
+      const mkOp = (liste, ad, adet, sn, pal) => { if(adet>0.5){ liste.push({ ad, adet:Math.ceil(adet-1e-6), sureSn:clock(sn), palet: pal>0 ? Math.round(adet/pal*100)/100 : null }); return liste[liste.length-1]; } return null; };
       kayit.role = []; kayit.telli = [];
-      mkOp(kayit.role, '230 yaş → nemli + kapak', o.y230, o.y230*sR230);
-      mkOp(kayit.role, '180 yaş → nemli → kuru', o.y180tam, o.y180tam*(sR180a+sR180b));
+      mkOp(kayit.role, '230 yaş → nemli + kapak', o.y230, o.y230*sR230, palet21);
+      { const x = mkOp(kayit.role, '180 yaş → nemli → kuru', o.y180tam, o.y180tam*(sR180a+sR180b), 0);
+        if(x && o.y180pal>0.01){ const p = Math.round(o.y180pal*100)/100; x.paletMetin = p + ' palet' + (o.y180srb>0.5 ? ' + ' + Math.round(o.y180srb) + ' adet' : ''); } }
       mkOp(kayit.role, '180 nemli → kuru (stoktan)', o.y180nemli, o.y180nemli*sR180b);
-      mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12);
+      mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12, palet12);
       mkOp(kayit.telli, rT>0 ? '230 nemli → kapak + içlik (1. geçiş)' : '230 nemli → kapak + içlik', o.n230, o.n230*sT230);
       if(rT>0) mkOp(kayit.telli, '230 tekrar nemli çıkan (2. geçiş)', o.n230b, o.n230b*sT230b);
       mkOp(kayit.telli, '1,2 mm yaş → kapak', o.y12t, o.y12t*sT12);
@@ -3117,6 +3132,9 @@
           ${kParamInput('pazar_dizme_aktif','Pazar Dizme Hattı (1=çalışır, 0=kapalı)')}
           ${kParamInput('vardiya1_baslangic','1. Vardiya Başlangıç Saati (0-23)')}
           ${kParamInput('dizme_baslama_saat','Dizme Başlama Stoğu (saatlik tüketim)')}
+          ${kParamInput('yas_palet_21','Yaş Palet — 2,1 mm (adet, 0=serbest)')}
+          ${kParamInput('yas_palet_23','Yaş Palet — 2,3 mm (adet, 0=serbest)')}
+          ${kParamInput('yas_palet_12','Yaş Palet — 1,2 mm (adet, 0=serbest)')}
           ${kParamInput('dolgu_adet','Dolgu Hattı Vardiyalık Üretim (adet)')}
           ${kParamInput('dolgu_kalinlik','Dolgu Hattı Kalınlığı (mm)')}
           ${kParamInput('dolgu_kapak_kat','Dolgu Kontraplak Başına 2,1 mm Kapak (adet)')}
@@ -3195,7 +3213,7 @@
       };
       const sureYaz = sn => { const dk = Math.round(sn/60); return dk>=60 ? Math.floor(dk/60)+' sa '+String(dk%60).padStart(2,'0')+' dk' : dk+' dk'; };
       const opSatirlari = (v, liste) => liste.length===0 ? '<span class="hint">Boşta</span>' : liste.map(o => `
-        <div style="margin-bottom:6px;"><b>${o.ad}</b><br><span class="mono">${o.adet} adet · ${saatYaz(v.vardiyaBasSaat + o.basSn/3600)}–${saatYaz(v.vardiyaBasSaat + (o.basSn+o.sureSn)/3600)} (${sureYaz(o.sureSn)})</span></div>`).join('');
+        <div style="margin-bottom:6px;"><b>${o.ad}</b><br><span class="mono">${o.adet} adet${o.paletMetin ? ' ('+o.paletMetin+')' : (o.palet ? ' ('+sayi(o.palet)+' palet)' : '')} · ${saatYaz(v.vardiyaBasSaat + o.basSn/3600)}–${saatYaz(v.vardiyaBasSaat + (o.basSn+o.sureSn)/3600)} (${sureYaz(o.sureSn)})</span></div>`).join('');
       const yuzde = (dolu, kap) => kap>0 ? Math.round(dolu/kap*100) : 0;
 
       const vards = sonuc.vardiyalar;
