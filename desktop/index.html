@@ -224,7 +224,7 @@
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
       telli_230_kapak_pct: 25,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
-      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8
+      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 1
     },
     uretimStok: {}, // eldeki ara ürün stoğu (adet), anahtarlar URETIM_STOK_SATIRLARI'nda
     uretimKritik: {}, // kritik (asgari) ara ürün stoğu (adet)
@@ -2671,18 +2671,41 @@
     const rem = gruplar.map(g => g.adet);
 
     // Dizme bir kalınlığa ancak vardiya başında, kullanacağı her kuru ara üründen en az
-    // min(kritik stok, vardiya ihtiyacı) kadar stok varsa başlayabilir (stok yokken hat başlayamaz).
+    // "başlama stoğu" (dizme_baslama_saat saatlik tüketim) kadar stok varsa başlayabilir.
+    // Kritik stok bu kapı için KULLANILMAZ; yalnız ara ürün üretim önceliğini belirler.
+    const basSaat = Math.max(0, n('dizme_baslama_saat',1));
     function grupBaslayabilir(i){
       const g = gruplar[i];
       return Object.keys(g.talepPerPanel).every(h => {
-        const gerek = Math.min(kritik[h]||0, g.talepPerPanel[h]*g.hedef10);
+        const gerek = Math.max(1, g.talepPerPanel[h]*g.hedef10*basSaat/8);
         return (S.kuru[h]||0) >= gerek - 1e-6;
       });
+    }
+    // Öncelik sırası: 1) başlamış (devam eden) kalınlıklar — biri bitmeden başkasına geçilmez,
+    // 2) şu an başlayabilenler, 3) başlayamayanlar (ara ürün hazırlık süresi kısa olan önce).
+    let sira = [], hazirDegil = [];
+    function siralaGruplar(capTx){
+      const idx = gruplar.map((_,i)=>i).filter(i=>rem[i]>0);
+      const devam = idx.filter(i=>rem[i]<gruplar[i].adet);
+      const kalan = idx.filter(i=>rem[i]>=gruplar[i].adet);
+      const hazir = kalan.filter(i=>grupBaslayabilir(i));
+      const degil = kalan.filter(i=>!grupBaslayabilir(i));
+      const sure = {};
+      degil.forEach(i => {
+        const nd = {};
+        Object.keys(gruplar[i].talepPerPanel).forEach(h => { const q=Math.max(0,(kritik[h]||0)-(S.kuru[h]||0), gruplar[i].talepPerPanel[h]*gruplar[i].hedef10*basSaat/8-(S.kuru[h]||0)); if(q>0) nd[h]=q; });
+        const z = zincir(nd, 0, capTx, S.nemli, S.nemli180);
+        sure[i] = z.secR + z.secT;
+      });
+      degil.sort((x,y)=> (sure[x]-sure[y]) || (x-y));
+      sira = devam.concat(hazir, degil);
+      hazirDegil = degil;
     }
     function planlaDizme(remMap, hepsiUygun){
       const out = new Array(gruplar.length).fill(0);
       let frac = 1;
-      for(let i=0;i<gruplar.length && frac>1e-9;i++){
+      for(const i of sira){
+        if(frac<=1e-9) break;
         if(remMap[i]<=0) continue;
         if(!hepsiUygun && !grupBaslayabilir(i)) continue;
         const maxP = Math.floor(frac*gruplar[i].hedef10 + 1e-9);
@@ -2771,6 +2794,7 @@
                       dizme:[], dizmeM3:0, dizmeKat:0, kisitlandi:false };
 
       // 1) dizme planı ve fizibilite (sert ihtiyaç)
+      siralaGruplar(capT);
       let panels = new Array(gruplar.length).fill(0);
       let D = {};
       let sonuc = null;
@@ -2791,6 +2815,7 @@
       let onUretim = {};
       const dizmeCalismadi = panels.every(p => p<=0);
       kayit.stokBekliyor = T.dizmeAktif && dizmeCalismadi && rem.some(r=>r>0);
+      kayit.hazirlanan = hazirDegil.slice(0,3).map(i=>gruplar[i].kalinlik);
       if(rem.some(r=>r>0)){
         // Dizme bu vardiyada çalışmadıysa (kapalı gün veya stok yok) tam bir vardiyalık ön üretim hedeflenir;
         // çalıştıysa bir sonraki vardiyanın planlanan ihtiyacı için boş kalan makine süresi kullanılır.
@@ -2799,28 +2824,63 @@
         if(!T.dizmeAktif || dizmeCalismadi) onUretim = talepHesapla(planlaDizme(rem, true));
         else if(sonraki && sonraki.dizmeAktif && remSonra.some(r=>r>0)) onUretim = talepHesapla(planlaDizme(remSonra, true));
       }
-      const hepsi = new Set(havuzlar);
-      // l1: kritik stok payı, l2: bir sonraki vardiya için ön üretim payı (önce kritik, sonra ön üretim)
-      const toplamNeeds = (l1, l2) => {
+      // Yumuşak ihtiyaç öncelik kademeleri: sıradaki her kalınlık için kullandığı ara ürünlerin kritik stoğa
+      // çıkarılması (devam eden / başlayabilen / hazırlığı kısa olan önce), en sonda sonraki vardiya ön üretimi.
+      const kademeler = [];
+      { const kr = {}; let tamponVar = false;
+        sira.forEach(i => {
+          Object.keys(gruplar[i].talepPerPanel).forEach(h => { kr[h] = kritik[h]||0; if(h.startsWith('230|2.1')) tamponVar = true; });
+          kademeler.push({ kr: Object.assign({}, kr), tampon: tamponVar ? kritikNemli : 0 });
+        });
+      }
+      const toplamNeeds = (krMap, l2) => {
         const nd = {};
-        hepsi.forEach(h => {
-          const hedef = l1*(kritik[h]||0) + (D[h]||0) + l2*(onUretim[h]||0);
+        havuzlar.forEach(h => {
+          const hedef = (krMap[h]||0) + (D[h]||0) + l2*(onUretim[h]||0);
           const q = Math.max(0, hedef - (S.kuru[h]||0));
           if(q>0) nd[h] = q;
         });
         return nd;
       };
-      const dene = (l1, l2) => zincir(toplamNeeds(l1,l2), l1*kritikNemli, capT, S.nemli, S.nemli180);
+      const evalSeviye = (krMap, tp, l2) => zincir(toplamNeeds(krMap,l2), tp, capT, S.nemli, S.nemli180);
       const sigar = x => x.secR<=capR+1e-6 && x.secT<=capT+1e-6;
-      let enIyi = null;
-      const tam = dene(1,1);
-      if(sigar(tam)){ enIyi = tam; }
-      else if(sigar(dene(1,0))){
-        let lo=0, hi=1; enIyi = dene(1,0);
-        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=dene(1,mid); if(sigar(d)){ lo=mid; enIyi=d; } else hi=mid; }
+      const sonKad = kademeler.length ? kademeler[kademeler.length-1] : { kr:{}, tampon:0 };
+      let enIyi = null, kabul = { kr:{}, tp:0, l2:0 };
+      const tam = evalSeviye(sonKad.kr, sonKad.tampon, 1);
+      if(sigar(tam)){ enIyi = tam; kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:1 }; }
+      else if(sigar(evalSeviye(sonKad.kr, sonKad.tampon, 0))){
+        let lo=0, hi=1; enIyi = evalSeviye(sonKad.kr, sonKad.tampon, 0); kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:0 };
+        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=evalSeviye(sonKad.kr, sonKad.tampon, mid); if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr:sonKad.kr, tp:sonKad.tampon, l2:mid }; } else hi=mid; }
       } else {
-        let lo=0, hi=1; enIyi = sigar(dene(0,0)) ? dene(0,0) : sonuc;
-        for(let k=0;k<14;k++){ const mid=(lo+hi)/2; const d=dene(mid,0); if(sigar(d)){ lo=mid; enIyi=d; } else hi=mid; }
+        const bazD = evalSeviye({},0,0);
+        enIyi = sigar(bazD) ? bazD : sonuc;
+        let onceki = { kr:{}, tampon:0 };
+        for(const kd of kademeler){
+          const tamK = evalSeviye(kd.kr, kd.tampon, 0);
+          if(sigar(tamK)){ enIyi = tamK; onceki = kd; kabul = { kr:kd.kr, tp:kd.tampon, l2:0 }; continue; }
+          let lo=0, hi=1;
+          for(let k=0;k<14;k++){
+            const mid=(lo+hi)/2; const kr = {};
+            Object.keys(kd.kr).forEach(h => { const a0=onceki.kr[h]||0; kr[h] = a0 + mid*(kd.kr[h]-a0); });
+            const d = evalSeviye(kr, onceki.tampon + mid*(kd.tampon-onceki.tampon), 0);
+            if(sigar(d)){ lo=mid; enIyi=d; kabul = { kr, tp:onceki.tampon + mid*(kd.tampon-onceki.tampon), l2:0 }; } else hi=mid;
+          }
+          break;
+        }
+      }
+      // Telli boşta kalmasın: röleliyi hiç yormadan, telli'nin boş süresiyle 1,2 mm kapak stoğu birikir
+      // (10/18 mm gibi 1,2 mm kullanmayan kalınlıklar çalışırken sıradaki 1,2 mm'li kalınlıklar için).
+      { const h12 = '230|1.2';
+        if(havuzlar.has(h12) && sira.some(i=>gruplar[i].talepPerPanel[h12]) && (kabul.kr[h12]||0) < (kritik[h12]||0)){
+          const k0 = kabul.kr[h12]||0, k1 = kritik[h12]||0, taban = enIyi.ops.y12r;
+          let lo=0, hi=1, en=null;
+          for(let k=0;k<14;k++){
+            const mid=(lo+hi)/2; const kr = Object.assign({}, kabul.kr); kr[h12] = k0 + mid*(k1-k0);
+            const d = evalSeviye(kr, kabul.tp, kabul.l2);
+            if(sigar(d) && d.ops.y12r <= taban+1e-6){ lo=mid; en=d; } else hi=mid;
+          }
+          if(en) enIyi = en;
+        }
       }
       sonuc = enIyi;
 
@@ -3015,6 +3075,7 @@
           ${kParamInput('pazar_kurutma_saat','Pazar Kurutma Çalışma (saat)')}
           ${kParamInput('pazar_dizme_aktif','Pazar Dizme Hattı (1=çalışır, 0=kapalı)')}
           ${kParamInput('vardiya1_baslangic','1. Vardiya Başlangıç Saati (0-23)')}
+          ${kParamInput('dizme_baslama_saat','Dizme Başlama Stoğu (saatlik tüketim)')}
         </div>
       </div>
     `;
@@ -3137,7 +3198,7 @@
                     <td class="mono">${soyma.length ? soyma.join('<br>') : '<span class="hint">—</span>'}</td>
                     <td>${opSatirlari(v, v.role)}<span class="hint">Doluluk %${yuzde(v.secR, v.capR)}</span></td>
                     <td>${opSatirlari(v, v.telli)}<span class="hint">Doluluk %${yuzde(v.secT, v.capT)}</span></td>
-                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.stokBekliyor ? '<span style="color:var(--red);font-weight:600;">Başlayamaz</span><br><span class="hint">Kritik ara ürün stoğu yok; kurutma stok hazırlıyor.</span>' : v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
+                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.stokBekliyor ? `<span style="color:var(--red);font-weight:600;">Başlayamaz</span><br><span class="hint">Başlama stoğu yok; kurutma ara ürün hazırlıyor${v.hazirlanan && v.hazirlanan.length ? ' (öncelik: '+v.hazirlanan.join(', ')+' mm)' : ''}.</span>` : v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
                     <td class="mono" style="font-size:11.5px;line-height:1.6;">${stokSatir.join('<br>')}</td>
                   </tr>`;
                 }).join('')}
@@ -3155,7 +3216,7 @@
     return `
       <div class="card" style="padding:16px;margin-top:16px;">
         <h3 style="font-size:14px;margin-bottom:6px;">Hat Hat Üretim Planı (Vardiya Bazlı)</h3>
-        <p class="hint" style="margin-bottom:12px;">Soyma → Röleli / Telli → Dizme hatları birbirine bağlı hesaplanır: soymadan çıkan yaş papel röleliye, röleliden çıkan nemli 230 telliye gider. Dizme hattı vardiyalık hedefi (1329 kat referansı, 10'a yuvarlanmış) sipariş sırasıyla ve kalınlık sırasıyla doldurulur; her vardiyada dizmenin tüketeceği kuru papel, eldeki stok ve kritik stok seviyesi düşülerek makinelere dağıtılır. Soyma kapasitesi sınırsız kabul edilir; sadece o vardiyada soyulması gereken yaş papel gösterilir.</p>
+        <p class="hint" style="margin-bottom:12px;">Soyma → Röleli / Telli → Dizme hatları birbirine bağlı hesaplanır: soymadan çıkan yaş papel röleliye, röleliden çıkan nemli 230 telliye gider. Dizme hattı vardiyalık hedefi (1329 kat referansı, 10'a yuvarlanmış) sipariş sırasıyla ve kalınlık sırasıyla doldurulur; her vardiyada dizmenin tüketeceği kuru papel, eldeki stok düşülerek makinelere dağıtılır. Başlamış bir kalınlık bitmeden başka kalınlığa geçilmez; ara ürünü hazır olmayan kalınlıklar beklerken, hazırlığı en kısa olan kalınlıkların ara ürünleri öncelikli üretilir. Kritik stok dizmeyi durdurmaz; yalnız hangi ara ürünün önce üretileceğini belirler. Soyma kapasitesi sınırsız kabul edilir; sadece o vardiyada soyulması gereken yaş papel gösterilir.</p>
         <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 8px;">Eldeki Stok ve Kritik Stok</h4>
         ${stokTablosu}
         ${baslangicSecici}
