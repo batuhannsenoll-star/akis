@@ -223,15 +223,20 @@
     uretimPlanlamaHafta: '', // 'YYYY-Www', boşsa render sırasında içinde bulunulan haftaya set edilir
     planlamaSatirlari: [{ kalinlik:'', yapilis:'Standart', adet:'' }],
     kurutmaModelParams: {
-      role_230_sn: 60, role_230_nemli_sn: 30, role_180_sn: 46.96, role_180_nemli_sn: 35, role_12_sn: 50,
-      telli_230_sn: 26, telli_180_sn: 35, telli_12_sn: 50,
-      role_230_kapak_pct: 37.5, role_230_icli_pct: 7.5, role_230_nemli_pct: 50, role_230_fire_pct: 5,
-      role_180_kuru_pct: 15, role_180_nemli_pct: 75, role_180_parca_pct: 10,
-      role_12_kapak_pct: 75, role_12_nemli_pct: 15, role_12_parca_pct: 10,
-      telli_recirc_pct: 10,
-      telli_mola_saat: 3.5, role_gunluk_saat: 24,
-      hata_payi_pct: 18.7
+      role_230_sn: 60, role_230_nemli_sn: 30,
+      role_180_sn: 45, role_180_nemli_sn: 35,
+      role_12_sn: 50,
+      telli_230_sn: 30, telli_180_sn: 35, telli_12_sn: 50,
+      role_230_nemli_pct: 75, role_230_kapak_pct: 25, role_230_icli_pct: 0, role_230_fire_pct: 0,
+      role_180_nemli_pct: 100, role_180_kuru_pct: 0, role_180_parca_pct: 0,
+      role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
+      telli_230_kapak_pct: 25,
+      telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
+      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 0
     },
+    uretimStok: {}, // eldeki ara ürün stoğu (adet), anahtarlar URETIM_STOK_SATIRLARI'nda
+    uretimKritik: {}, // kritik (asgari) ara ürün stoğu (adet)
+    uretimBaslangicGun: null, uretimBaslangicVardiya: 1, // plan başlangıcı (0=Pzt..6=Paz), null=otomatik
     gunlukAcikBloklar: {},
     loading: true,
     modal: null,
@@ -2591,54 +2596,305 @@
     `;
   }
 
-  // Röleli/telli kurutma parametrelerine göre, verilen kalınlık kırılımının (230/180/1,2mm
-  // günlük hedef papel adetleri) röleli ve telli'de ne kadar süre tutacağını tahmin eder.
-  // Taslak: 1,2mm tek geçişte röleli'de kurutulur kabul edilir (telli'ye gitmez); 230'un nemlisi
-  // telli'de, 180'in nemlisi ise ikinci kez röleli'de kurur.
-  function kurutmaSuresiTahminHesapla(kirilimListesi, p){
-    const eff = 1 - (parseFloat(p.hata_payi_pct)||0)/100;
-    let hedef230 = 0, hedef180 = 0, hedef12 = 0;
-    (kirilimListesi||[]).forEach(k => {
-      if(Math.abs(k.kalinlikMm-1.2)<0.05) hedef12 += k.papelSayisiGunluk;
-      else if(k.orientasyon==='230') hedef230 += k.papelSayisiGunluk;
-      else hedef180 += k.papelSayisiGunluk;
-    });
-
-    const role230FinishedFrac = ((parseFloat(p.role_230_kapak_pct)||0)+(parseFloat(p.role_230_icli_pct)||0)+(parseFloat(p.role_230_nemli_pct)||0))/100;
-    const role180FinishedFrac = ((parseFloat(p.role_180_kuru_pct)||0)+(parseFloat(p.role_180_nemli_pct)||0))/100;
-    const role12FinishedFrac = (parseFloat(p.role_12_kapak_pct)||0)/100;
-
-    const rawInput230 = role230FinishedFrac>0 ? hedef230/role230FinishedFrac : 0;
-    const rawInput180 = role180FinishedFrac>0 ? hedef180/role180FinishedFrac : 0;
-    const rawInput12 = role12FinishedFrac>0 ? hedef12/role12FinishedFrac : 0;
-
-    const rate = sn => eff * (sn>0 ? 3600/sn : 0);
-    const role230Rate = rate(parseFloat(p.role_230_sn)||0);
-    const role180Rate = rate(parseFloat(p.role_180_sn)||0);
-    const role12Rate = rate(parseFloat(p.role_12_sn)||0);
-    const telli230Rate = rate(parseFloat(p.telli_230_sn)||0);
-
-    const role230Saat = role230Rate>0 ? rawInput230/role230Rate : 0;
-    const role180PassCarpani = 1 + (parseFloat(p.role_180_nemli_pct)||0)/100;
-    const role180Saat = role180Rate>0 ? (rawInput180*role180PassCarpani)/role180Rate : 0;
-    const role12Saat = role12Rate>0 ? rawInput12/role12Rate : 0;
-    const roleToplamSaat = role230Saat+role180Saat+role12Saat;
-
-    const nemli230 = rawInput230*(parseFloat(p.role_230_nemli_pct)||0)/100;
-    const recircCarpani = 1/(1-(parseFloat(p.telli_recirc_pct)||0)/100);
-    const telliSaat = telli230Rate>0 ? (nemli230*recircCarpani)/telli230Rate : 0;
-
-    const roleMevcutSaat = parseFloat(p.role_gunluk_saat)||24;
-    const telliMevcutSaat = 24-(parseFloat(p.telli_mola_saat)||0);
-
-    return {
-      hedef230, hedef180, hedef12, rawInput230, rawInput180, rawInput12,
-      role230Saat, role180Saat, role12Saat, roleToplamSaat, telliSaat,
-      roleMevcutSaat, telliMevcutSaat,
-      roleGunSayisi: roleMevcutSaat>0 ? roleToplamSaat/roleMevcutSaat : 0,
-      telliGunSayisi: telliMevcutSaat>0 ? telliSaat/telliMevcutSaat : 0
-    };
+  // ---------- Hat Hat / Vardiya Vardiya Üretim Planı (Soyma → Röleli/Telli → Dizme) ----------
+  // Havuz anahtarı: kuru (kullanıma hazır) ara ürün çeşidi.
+  //   '230|2.1|kapak', '230|2.1|icli' (2,1mm 230 papel: kapak/içlik ayrı tutulur), '230|1.2' (1,2mm 230),
+  //   '180|2.1', '180|2.3' (tutkallı 180 papel, kalınlığa göre).
+  function havuzAnahtari(t, orient, rol){
+    if(orient==='180') return '180|'+t;
+    if(Math.abs(t-1.2)<0.05) return '230|1.2';
+    return '230|'+t+'|'+rol;
   }
+  // Reçete dizilimini (kalınlık dizisi) kat/rol/orientasyon listesine çevirir.
+  function dizilimKatlari(dizilim){
+    const n = dizilim.length;
+    return dizilim.map((t, idx) => {
+      const pos = idx+1;
+      const rol = (pos===1 || pos===n) ? 'kapak' : (pos%2===0 ? 'tutkalli' : 'icli');
+      const orient = rol==='tutkalli' ? '180' : '230';
+      return { t: parseFloat(t)||0, rol, orient, havuz: havuzAnahtari(parseFloat(t)||0, orient, rol) };
+    });
+  }
+
+  // Dayanağı vardiya takvimi: Pzt–Cmt tam (3 vardiya), Pazar kurutma kısıtlı / dizme kapalı.
+  function planVardiyaTakvimi(P, gunSayisi){
+    const n = (k,v)=>{ const x=parseFloat(P[k]); return isNaN(x)?v:x; };
+    const roleGun = Math.min(24, Math.max(0, n('role_gunluk_saat',24)));
+    const pazarSaat = Math.min(24, Math.max(0, n('pazar_kurutma_saat',16)));
+    const pazarDizme = n('pazar_dizme_aktif',0) > 0.5;
+    const dagit = toplam => [0,1,2].map(i => Math.max(0, Math.min(8, toplam - 8*i)));
+    const liste = [];
+    for(let g=0; g<gunSayisi; g++){
+      const dow = g%7; // 0=Pzt ... 6=Paz
+      const pazar = dow===6;
+      const roleSaat = dagit(pazar ? Math.min(roleGun, pazarSaat) : roleGun);
+      const telliSaat = dagit(pazar ? pazarSaat : 24);
+      for(let v=0; v<3; v++){
+        liste.push({ gun:g, dow, vardiya:v+1, roleSaat:roleSaat[v], telliSaat:telliSaat[v], dizmeAktif: pazar ? pazarDizme : true });
+      }
+    }
+    return liste;
+  }
+
+  // girdi: { gruplar:[{kalinlik, adet, dizilim:[...], panelM3}], stok:{...}, kritik:{...}, params:{...}, maxGun }
+  function uretimPlaniHesapla(girdi){
+    const P = girdi.params || {};
+    const n = (k,v)=>{ const x=parseFloat(P[k]); return isNaN(x)?v:x; };
+    const hata = Math.min(0.9, Math.max(0, n('hata_payi_pct',10)/100));
+    const verim = 1-hata;
+    const katVardiya = n('dizme_kat_vardiya',1329);
+    const rK = n('role_230_kapak_pct',25)/100, rI = n('role_230_icli_pct',0)/100, rN = n('role_230_nemli_pct',75)/100;
+    const tK = Math.min(1, Math.max(0, n('telli_230_kapak_pct',25)/100)), tI = 1-tK;
+    const sR230 = n('role_230_sn',60)/4;
+    const sR180a = n('role_180_sn',45)/4, sR180b = n('role_180_nemli_sn',35)/4;
+    const p180 = Math.min(0.9, Math.max(0, n('role_180_parca_pct',0)/100));
+    const sR12 = n('role_12_sn',50)/4;
+    const y12 = Math.max(0.01, n('role_12_kapak_pct',40)/100);
+    const sT230 = n('telli_230_sn',30), sT12 = n('telli_12_sn',50);
+    const molaDk = n('telli_mola_dk',90);
+    const vardiya1Bas = n('vardiya1_baslangic',0);
+    const maxGun = girdi.maxGun || 28;
+
+    const gruplar = girdi.gruplar.map(g => {
+      const katlar = dizilimKatlari(g.dizilim);
+      const talep = {};
+      katlar.forEach(k => { talep[k.havuz] = (talep[k.havuz]||0)+1; });
+      const hedef10 = Math.max(10, Math.round(katVardiya/katlar.length/10)*10);
+      return { kalinlik:g.kalinlik, adet:g.adet, katSayisi:katlar.length, talepPerPanel:talep, hedef10, panelM3:g.panelM3||0 };
+    });
+    const havuzlar = new Set();
+    gruplar.forEach(g => Object.keys(g.talepPerPanel).forEach(h => havuzlar.add(h)));
+
+    // başlangıç stokları
+    const S = { yas230: girdi.stok['yas_230']||0, yas180: girdi.stok['yas_180']||0, yas12: girdi.stok['yas_12']||0,
+                nemli180: girdi.stok['nemli_180']||0, nemli:{}, kuru:{} };
+    S.nemli['2.1'] = girdi.stok['nemli_230']||0;
+    havuzlar.forEach(h => { S.kuru[h] = girdi.stok['kuru|'+h]||0; });
+    const kritik = {};
+    havuzlar.forEach(h => { kritik[h] = girdi.kritik['kuru|'+h]||0; });
+    const kritikNemli = girdi.kritik['nemli_230']||0;
+
+    const rem = gruplar.map(g => g.adet);
+
+    function planlaDizme(remMap){
+      const out = new Array(gruplar.length).fill(0);
+      let frac = 1;
+      for(let i=0;i<gruplar.length && frac>1e-9;i++){
+        if(remMap[i]<=0) continue;
+        const maxP = Math.floor(frac*gruplar[i].hedef10 + 1e-9);
+        const p = Math.min(remMap[i], maxP);
+        if(p<=0) continue;
+        out[i] = p;
+        frac -= p/gruplar[i].hedef10;
+      }
+      return out;
+    }
+    function talepHesapla(panels){
+      const D = {};
+      panels.forEach((p,i) => { if(p>0) Object.entries(gruplar[i].talepPerPanel).forEach(([h,c]) => { D[h]=(D[h]||0)+c*p; }); });
+      return D;
+    }
+
+    // İhtiyaç (üretilecek kuru adet) → makine işleri ve süreleri
+    function zincir(needs, tampon, capT, nemliS, nemli180S){
+      const ops = { y230:0, y180nemli:0, y180tam:0, y12r:0, y12t:0, n230:0 };
+      const uretim = {}; const nemliSon = Object.assign({}, nemliS);
+      let secR = 0, secT = 0, y180ham = 0, y12ham = 0;
+      const kuruEkle = (h,q) => { uretim[h]=(uretim[h]||0)+q; };
+      // 230 zinciri (kalınlık bazında; 1,2mm hariç)
+      const kalinliklar = new Set();
+      Object.keys(needs).forEach(h => { const a=h.split('|'); if(a[0]==='230' && a[1]!=='1.2') kalinliklar.add(a[1]); });
+      if(tampon>0) kalinliklar.add('2.1');
+      kalinliklar.forEach(t => {
+        const Kn = needs['230|'+t+'|kapak']||0, In = needs['230|'+t+'|icli']||0;
+        const Sn = nemliS[t]||0;
+        const tp = (t==='2.1') ? tampon : 0;
+        let y=0, nn=0;
+        for(let it=0; it<60; it++){
+          nn = Math.max(0, (In - rI*y)/tI);
+          const yK = rK>0 ? Math.max(0,(Kn - tK*nn)/rK) : 0;
+          const yN = rN>0 ? Math.max(0,(nn + tp - Sn)/rN) : 0;
+          const yy = Math.max(yK,yN);
+          if(Math.abs(yy-y)<1e-7){ y=yy; break; }
+          y=yy;
+        }
+        if(y<=0 && nn<=0) return;
+        kuruEkle('230|'+t+'|kapak', rK*y + tK*nn);
+        kuruEkle('230|'+t+'|icli', rI*y + tI*nn);
+        nemliSon[t] = Sn + rN*y - nn;
+        ops.y230 += y; ops.n230 += nn;
+        secR += y*sR230; secT += nn*sT230;
+      });
+      // 180 zinciri (yalnız röleli, iki geçiş)
+      let nemli180Kalan = nemli180S;
+      Object.keys(needs).forEach(h => {
+        if(!h.startsWith('180|')) return;
+        const N = needs[h]; if(N<=0) return;
+        const ham = N/(1-p180);
+        const nemliKullan = Math.min(ham, nemli180Kalan); nemli180Kalan -= nemliKullan;
+        ops.y180nemli += nemliKullan; ops.y180tam += (ham-nemliKullan);
+        secR += nemliKullan*sR180b + (ham-nemliKullan)*(sR180a+sR180b);
+        kuruEkle(h, N);
+        y180ham += ham - nemliKullan;
+      });
+      // 1,2mm: önce telli'nin boş kalan süresi, kalanı röleli
+      const N12 = needs['230|1.2']||0;
+      if(N12>0){
+        const ham = N12/y12;
+        const telliKalanSn = Math.max(0, capT - secT);
+        const telliGirdi = Math.min(ham, telliKalanSn/sT12);
+        ops.y12t = telliGirdi; ops.y12r = ham - telliGirdi;
+        secT += telliGirdi*sT12; secR += (ham-telliGirdi)*sR12;
+        kuruEkle('230|1.2', N12);
+        y12ham = ham;
+      }
+      return { ops, uretim, nemliSon, secR, secT, nemli180Kalan, yas: { y230:ops.y230, y180:y180ham, y12:y12ham } };
+    }
+
+    const basIdx = Math.max(0, parseInt(girdi.baslangicIdx)||0);
+    const takvim = planVardiyaTakvimi(P, Math.ceil(basIdx/3)+maxGun+1);
+    const sonIdx = Math.min(takvim.length, basIdx + maxGun*3);
+    const vardiyalar = [];
+    let bitti = false, bitisIdx = -1, hareketsiz = 0;
+    const uyari = [];
+
+    for(let si=basIdx; si<sonIdx && !bitti; si++){
+      const T = takvim[si];
+      const capR = T.roleSaat*3600*verim;
+      const telliSn = Math.max(0, (T.telliSaat - molaDk/60*(T.telliSaat/8)))*3600;
+      const capT = telliSn*verim;
+      const kayit = { idx:si, gun:T.gun, dow:T.dow, vardiya:T.vardiya, roleSaat:T.roleSaat, telliSaat:Math.max(0,T.telliSaat - molaDk/60*(T.telliSaat/8)), dizmeAktif:T.dizmeAktif,
+                      dizme:[], dizmeM3:0, dizmeKat:0, kisitlandi:false };
+
+      // 1) dizme planı ve fizibilite (sert ihtiyaç)
+      let panels = new Array(gruplar.length).fill(0);
+      let D = {};
+      let sonuc = null;
+      const planlanan = T.dizmeAktif ? planlaDizme(rem) : new Array(gruplar.length).fill(0);
+      const hardNeeds = Dm => { const nd={}; Object.keys(Dm).forEach(h => { const q=Math.max(0,Dm[h]-(S.kuru[h]||0)); if(q>0) nd[h]=q; }); return nd; };
+      let bulundu = false;
+      for(let adim=20; adim>=0; adim--){
+        const scale = adim/20;
+        panels = planlanan.map(p => p<=0 ? 0 : (p>=10 ? Math.floor(p*scale/10)*10 : Math.floor(p*scale)));
+        D = talepHesapla(panels);
+        const hn = hardNeeds(D);
+        const s = zincir(hn, 0, capT, S.nemli, S.nemli180);
+        if(s.secR <= capR+1e-6 && s.secT <= capT+1e-6){ sonuc = s; bulundu = true; if(adim<20) kayit.kisitlandi = true; break; }
+      }
+      if(!bulundu){ panels = new Array(gruplar.length).fill(0); D = {}; sonuc = zincir({},0,capT,S.nemli,S.nemli180); kayit.kisitlandi = true; }
+
+      // 2) yumuşak ihtiyaç: kritik stok + (dizme kapalıysa) sonraki dizme vardiyasının ön üretimi
+      let onUretim = {};
+      if(!T.dizmeAktif && rem.some(r=>r>0)) onUretim = talepHesapla(planlaDizme(rem));
+      const hepsi = new Set(havuzlar);
+      const toplamNeeds = lam => {
+        const nd = {};
+        hepsi.forEach(h => {
+          const hedef = (lam*(kritik[h]||0)) + (D[h]||0) + (lam>0 ? (onUretim[h]||0) : 0)*lam;
+          const q = Math.max(0, hedef - (S.kuru[h]||0));
+          if(q>0) nd[h] = q;
+        });
+        return nd;
+      };
+      const dene = lam => zincir(toplamNeeds(lam), lam*kritikNemli, capT, S.nemli, S.nemli180);
+      let s1 = dene(1);
+      if(s1.secR<=capR+1e-6 && s1.secT<=capT+1e-6){ sonuc = s1; }
+      else {
+        let lo=0, hi=1, en = dene(0);
+        if(!(en.secR<=capR+1e-6 && en.secT<=capT+1e-6)) en = sonuc; // sert ihtiyaç zaten sonuc
+        for(let k=0;k<14;k++){
+          const mid=(lo+hi)/2; const d=dene(mid);
+          if(d.secR<=capR+1e-6 && d.secT<=capT+1e-6){ lo=mid; en=d; } else hi=mid;
+        }
+        sonuc = en;
+      }
+
+      // 3) stok güncelle
+      Object.entries(sonuc.uretim).forEach(([h,q]) => { S.kuru[h] = (S.kuru[h]||0)+q; });
+      Object.entries(D).forEach(([h,q]) => { S.kuru[h] = (S.kuru[h]||0)-q; });
+      Object.keys(sonuc.nemliSon).forEach(t => { S.nemli[t] = sonuc.nemliSon[t]; });
+      S.nemli180 = sonuc.nemli180Kalan;
+      // yaş tüketimi / soyma
+      const soyma = {};
+      [['y230','yas230'],['y180','yas180'],['y12','yas12']].forEach(([a,b]) => {
+        const ihtiyac = sonuc.yas[a]; const stoktan = Math.min(ihtiyac, S[b]); S[b] -= stoktan;
+        soyma[a] = Math.max(0, ihtiyac - stoktan);
+      });
+
+      // 4) kayıt
+      let toplamPanel = 0;
+      panels.forEach((p,i) => { if(p>0){
+        kayit.dizme.push({ kalinlik:gruplar[i].kalinlik, panel:p, kat:p*gruplar[i].katSayisi });
+        kayit.dizmeKat += p*gruplar[i].katSayisi; kayit.dizmeM3 += p*gruplar[i].panelM3; toplamPanel += p;
+        rem[i] -= p;
+      }});
+      kayit.soyma = soyma;
+      kayit.secR = sonuc.secR; kayit.secT = sonuc.secT; kayit.capR = capR; kayit.capT = capT;
+      kayit.verim = verim;
+      const o = sonuc.ops;
+      const clock = sn => sn/verim;
+      let t0 = vardiya1Bas + (T.vardiya-1)*8;
+      const mkOp = (liste, ad, adet, sn) => { if(adet>0.5){ liste.push({ ad, adet:Math.ceil(adet), sureSn:clock(sn) }); } };
+      kayit.role = []; kayit.telli = [];
+      mkOp(kayit.role, '230 yaş → nemli + kapak', o.y230, o.y230*sR230);
+      mkOp(kayit.role, '180 yaş → nemli → kuru', o.y180tam, o.y180tam*(sR180a+sR180b));
+      mkOp(kayit.role, '180 nemli → kuru (stoktan)', o.y180nemli, o.y180nemli*sR180b);
+      mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12);
+      mkOp(kayit.telli, '230 nemli → kapak + içlik', o.n230, o.n230*sT230);
+      mkOp(kayit.telli, '1,2 mm yaş → kapak', o.y12t, o.y12t*sT12);
+      let cur = 0; kayit.role.forEach(x => { x.basSn = cur; cur += x.sureSn; });
+      cur = 0; kayit.telli.forEach(x => { x.basSn = cur; cur += x.sureSn; });
+      kayit.roleDoluSn = kayit.role.reduce((s,x)=>s+x.sureSn,0);
+      kayit.telliDoluSn = kayit.telli.reduce((s,x)=>s+x.sureSn,0);
+      kayit.vardiyaBasSaat = t0; // saat (0-24)
+      kayit.stokSon = {}; Object.keys(S.kuru).forEach(h => kayit.stokSon[h] = S.kuru[h]);
+      kayit.nemliSon = S.nemli['2.1']||0;
+      kayit.kritik = kritik;
+      if(T.dizmeAktif && toplamPanel===0 && rem.some(r=>r>0)){ hareketsiz++; } else if(toplamPanel>0){ hareketsiz = 0; }
+      vardiyalar.push(kayit);
+      if(rem.every(r=>r<=0)){ bitti = true; bitisIdx = si; }
+      if(hareketsiz>=6){ uyari.push('Dizme hattı art arda 6 vardiya hiç üretemedi — kurutma kapasitesi veya girdiler yetersiz, plan durduruldu.'); break; }
+    }
+    if(!bitti && !uyari.length) uyari.push('Plan '+maxGun+' gün içinde tamamlanamadı.');
+    const toplamM3 = vardiyalar.reduce((s,v)=>s+v.dizmeM3,0);
+    return { vardiyalar, gruplar, bitti, bitisIdx, baslangicIdx:basIdx, uyari, toplamM3, kalan: rem.slice(), verim, katVardiya };
+  }
+
+  // ---------- Hat planı: stok/parametre saklama + ekranlar ----------
+  const URETIM_PLAN_LS_KEY = 'akis_uretim_plani_v1';
+  const URETIM_STOK_SATIRLARI = [
+    { key:'yas_230', ad:'Yaş 230 papel', kritik:false },
+    { key:'yas_180', ad:'Yaş 180 papel', kritik:false },
+    { key:'yas_12', ad:'Yaş 1,2 mm papel', kritik:false },
+    { key:'nemli_230', ad:'Nemli 230 papel (telliye gidecek)', kritik:true },
+    { key:'nemli_180', ad:'Nemli 180 papel (2. geçiş bekleyen)', kritik:false },
+    { key:'kuru|230|2.1|kapak', ad:'Kuru 2,1 mm 230 — Kapak', kritik:true },
+    { key:'kuru|230|2.1|icli', ad:'Kuru 2,1 mm 230 — İçlik', kritik:true },
+    { key:'kuru|230|1.2', ad:'Kuru 1,2 mm 230 (kapak)', kritik:true },
+    { key:'kuru|180|2.1', ad:'Kuru 2,1 mm 180 (tutkallı)', kritik:true },
+    { key:'kuru|180|2.3', ad:'Kuru 2,3 mm 180 (tutkallı)', kritik:true }
+  ];
+  function uretimPlaniVarsayilanKritik(){
+    const k = {};
+    URETIM_STOK_SATIRLARI.forEach(s => { if(s.kritik) k[s.key] = 600; });
+    return k;
+  }
+  function uretimPlaniYukle(){
+    try{
+      const ham = window.localStorage.getItem(URETIM_PLAN_LS_KEY);
+      if(!ham) return;
+      const o = JSON.parse(ham);
+      if(o && o.params) Object.assign(state.kurutmaModelParams, o.params);
+      if(o && o.stok) state.uretimStok = o.stok;
+      if(o && o.kritik) Object.assign(state.uretimKritik, o.kritik);
+    }catch(e){ /* depolama yoksa varsayılanlarla devam */ }
+  }
+  function uretimPlaniKaydet(){
+    try{
+      window.localStorage.setItem(URETIM_PLAN_LS_KEY, JSON.stringify({ params: state.kurutmaModelParams, stok: state.uretimStok, kritik: state.uretimKritik }));
+    }catch(e){ /* sessiz geç */ }
+  }
+  function uretimInputId(onek, key){ return onek+'-'+String(key).replace(/[^a-zA-Z0-9]/g,'_'); }
 
   function saatDkFormat(saat){
     const tam = Math.floor(saat);
@@ -2649,7 +2905,7 @@
   function kParamInput(field, label, opts){
     opts = opts || {};
     const val = state.kurutmaModelParams[field];
-    return `<div class="field"><label>${label}</label><input type="number" id="kparam-${field}" step="${opts.step||'any'}" min="0" data-action="kurutma-param" data-field="${field}" value="${val}"></div>`;
+    return `<div class="field"><label>${label}</label><input type="number" id="kparam-${field}" step="${opts.step||'any'}" min="0" data-action="kurutma-param" data-field="${field}" value="${val==null?'':val}"></div>`;
   }
 
   // Tek bir materyal (230 / 180 / 1,2mm) için çevrim süresi + çıktı oranı alanlarını
@@ -2664,16 +2920,8 @@
     `;
   }
 
-  function renderKurutmaSuresiTahmini(toplamKirilim){
-    const p = state.kurutmaModelParams;
-    const s = kurutmaSuresiTahminHesapla(toplamKirilim, p);
-    const kullanimOrani = (gerekli, mevcut) => mevcut>0 ? gerekli/mevcut : 0;
-    const kullanimRenk = oran => oran>1 ? '#b23b2e' : oran>0.85 ? '#b8860b' : '#2e7d32';
-    const roleOran = kullanimOrani(s.roleToplamSaat, s.roleMevcutSaat);
-    const telliOran = kullanimOrani(s.telliSaat, s.telliMevcutSaat);
+  function renderMakineParametreleri(){
     const oranGrid = icerik => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">${icerik}</div>`;
-
-    // --- RÖLELİ sütunu ---
     const role230 = materyalCercevesi('230', `
       ${kParamInput('role_230_sn','230 Yaş Çevrim Süresi (sn, 4 papel)')}
       ${kParamInput('role_230_nemli_sn','230 Nemli Çevrim Süresi (sn, 4 papel)')}
@@ -2683,28 +2931,30 @@
         ${kParamInput('role_230_icli_pct','İçlik (%)')}
         ${kParamInput('role_230_fire_pct','Parça (%)')}
       `)}
+      <p class="hint" style="margin-top:6px;">Röleli 230 nemliyi de işleyebilir ama plana katılmaz; parametre sadece referans.</p>
     `);
     const role180 = materyalCercevesi('180', `
-      ${kParamInput('role_180_sn','180 Yaş Çevrim Süresi (sn, 4 papel)')}
-      ${kParamInput('role_180_nemli_sn','180 Nemli Çevrim Süresi (sn, 4 papel)')}
+      ${kParamInput('role_180_sn','180 Yaş → Nemli Çevrim (sn, 4 papel)')}
+      ${kParamInput('role_180_nemli_sn','180 Nemli → Kuru Çevrim (sn, 4 papel)')}
       ${oranGrid(`
         ${kParamInput('role_180_nemli_pct','Nemli (%)')}
         ${kParamInput('role_180_kuru_pct','Kuru — 1. Geçiş (%)')}
         ${kParamInput('role_180_parca_pct','Parça (%)')}
       `)}
+      <p class="hint" style="margin-top:6px;">180 sadece röleliden iki geçişle geçer; plan yalnızca "Parça (%)" kaybını hesaba katar.</p>
     `);
     const role12 = materyalCercevesi('1,2mm', `
       ${kParamInput('role_12_sn','1,2mm Çevrim Süresi (sn, 4 papel)')}
       ${oranGrid(`
-        ${kParamInput('role_12_kapak_pct','Kapak (%)')}
+        ${kParamInput('role_12_kapak_pct','Kapak / Verim (%)')}
         ${kParamInput('role_12_nemli_pct','Nemli — İşlenmiyor (%)')}
         ${kParamInput('role_12_parca_pct','Parça (%)')}
       `)}
+      <p class="hint" style="margin-top:6px;">Verim %40 ise 10 yaş papelden 4 kapak çıkar; plan girdi ihtiyacını buna göre büyütür (telli 1,2mm için de aynı verim kullanılır).</p>
     `);
-
-    // --- TELLİ sütunu ---
     const telli230 = materyalCercevesi('230 (Nemli)', `
       ${kParamInput('telli_230_sn','230 Nemli Çevrim Süresi (sn, 1 papel)')}
+      ${kParamInput('telli_230_kapak_pct','Çıkan: Kapak (%) — kalanı içlik')}
     `);
     const telli180 = materyalCercevesi('180', `
       ${kParamInput('telli_180_sn','180 Çevrim Süresi (sn, 1 papel)')}
@@ -2712,56 +2962,184 @@
     `, {sonsuz:true});
     const telli12 = materyalCercevesi('1,2mm', `
       ${kParamInput('telli_12_sn','1,2mm Çevrim Süresi (sn, 1 papel)')}
-      <p class="hint" style="margin-top:6px;">Tampon durumunda telliden de verilebilir.</p>
+      <p class="hint" style="margin-top:6px;">Telli boş kalan süresinde 1,2mm yaş papel verilir (tampon).</p>
     `);
-
     return `
       <div class="card" style="padding:16px;margin-top:16px;">
-        <h3 style="font-size:14px;margin-bottom:6px;">Kurutma Süresi Tahmini (Taslak)</h3>
-        <p class="hint" style="margin-bottom:14px;">Yukarıdaki üretim planına göre röleli ve telli kurutma makinelerinde ne kadar süre gerekeceğini tahmin eder. Aşağıdaki tüm değerler değiştirilebilir parametrelerdir — röleli/telli çevrim süreleri, çıktı oranları ve genel verimsizlik payı gözlemlere göre güncellenebilir. Bu bir taslak modeldir, birlikte gözden geçirip düzeltilecektir.</p>
-
+        <h3 style="font-size:14px;margin-bottom:6px;">Makine Parametreleri ve Verim Oranları</h3>
+        <p class="hint" style="margin-bottom:14px;">Hat planı bu değerlerle hesaplanır. Değerler bu bilgisayarda saklanır.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
           <div>
             <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 10px;">Röleli</h4>
-            ${role230}
-            ${role180}
-            ${role12}
+            ${role230}${role180}${role12}
           </div>
           <div>
             <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 10px;">Telli</h4>
-            ${telli230}
-            ${telli180}
-            ${telli12}
+            ${telli230}${telli180}${telli12}
           </div>
         </div>
-
-        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 8px;">Duruş / Mola / Genel Hata Payı</h4>
+        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:6px 0 10px;">Duruş / Verimsizlik / Takvim</h4>
         <div class="form-grid">
-          ${kParamInput('telli_mola_saat','Telli Günlük Mola (saat)')}
-          ${kParamInput('telli_recirc_pct','Telli 230 — Kendi İçinde Tekrar Nemli (%)')}
+          ${kParamInput('telli_mola_dk','Telli Vardiyalık Duruş (dk)')}
           ${kParamInput('role_gunluk_saat','Röleli Günlük Çalışma (saat)')}
           ${kParamInput('hata_payi_pct','Genel Verimsizlik / Hata Payı (%)')}
+          ${kParamInput('dizme_kat_vardiya','Dizme Hattı Referansı (kat/vardiya)')}
+          ${kParamInput('pazar_kurutma_saat','Pazar Kurutma Çalışma (saat)')}
+          ${kParamInput('pazar_dizme_aktif','Pazar Dizme Hattı (1=çalışır, 0=kapalı)')}
+          ${kParamInput('vardiya1_baslangic','1. Vardiya Başlangıç Saati (0-23)')}
         </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px;">
-          <div class="card" style="padding:14px;box-shadow:none;border:1px solid var(--line);">
-            <div class="hint" style="font-weight:700;margin-bottom:8px;">Röleli</div>
-            <div class="meta-row"><span>Gerekli süre</span><b>${saatDkFormat(s.roleToplamSaat)}</b></div>
-            <div class="meta-row"><span>Mevcut günlük süre</span><b>${saatDkFormat(s.roleMevcutSaat)}</b></div>
-            <div class="meta-row"><span>Kullanım oranı</span><b style="color:${kullanimRenk(roleOran)};">%${(roleOran*100).toFixed(1)}</b></div>
-            <div class="meta-row"><span>Tahmini gün sayısı</span><b>${s.roleGunSayisi.toFixed(2)} gün</b></div>
-          </div>
-          <div class="card" style="padding:14px;box-shadow:none;border:1px solid var(--line);">
-            <div class="hint" style="font-weight:700;margin-bottom:8px;">Telli</div>
-            <div class="meta-row"><span>Gerekli süre</span><b>${saatDkFormat(s.telliSaat)}</b></div>
-            <div class="meta-row"><span>Mevcut günlük süre</span><b>${saatDkFormat(s.telliMevcutSaat)}</b></div>
-            <div class="meta-row"><span>Kullanım oranı</span><b style="color:${kullanimRenk(telliOran)};">%${(telliOran*100).toFixed(1)}</b></div>
-            <div class="meta-row"><span>Tahmini gün sayısı</span><b>${s.telliGunSayisi.toFixed(2)} gün</b></div>
-          </div>
-        </div>
-        <p class="hint" style="margin-top:12px;">Not: 1,2mm papel bu taslakta tek geçişte röleli'de kurutuluyor kabul edildi; 230'un nemlisi telli'de, 180'in nemlisi ise ikinci kez röleli'de kurutuluyor. "230 Nemli" (röleli) ve "180" (telli) parametreleri referans için duruyor, hesaba katılmıyor — verimli plan bu yolları kullanmıyor.</p>
       </div>
     `;
+  }
+
+  function havuzEtiketi(h){
+    const m = { '230|2.1|kapak':'Kapak 2,1', '230|2.1|icli':'İçlik 2,1', '230|1.2':'1,2 mm', '180|2.1':'180 (2,1)', '180|2.3':'180 (2,3)' };
+    return m[h] || h;
+  }
+
+  function renderHatPlani(h, haftaStr){
+    const GUN_ADLARI = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'];
+    const pazartesi = haftaBaslangicTarihi(haftaStr);
+    const gunler = haftaGunleri(pazartesi);
+    const p = state.kurutmaModelParams;
+
+    const eksikRecete = [];
+    const gruplar = [];
+    h.gruplar.forEach(g => {
+      const r = g.sonuc ? receteBul(g.kalinlik,'Standart') : null;
+      if(!g.sonuc || !r || !r.dizilim || !r.dizilim.length){ eksikRecete.push(g.kalinlik); return; }
+      gruplar.push({ kalinlik:g.kalinlik, adet:Math.round(g.toplamAdet), dizilim:r.dizilim.map(x=>parseFloat(x)||0), panelM3:g.sonuc.panelHacmiM3 });
+    });
+
+    // başlangıç noktası: seçili hafta içinde bulunulan haftaysa bugün, değilse pazartesi
+    const bugunDow = (new Date(todayStr()+'T00:00:00Z').getUTCDay()+6)%7;
+    const otoGun = (tarihToHaftaStr(todayStr())===haftaStr) ? bugunDow : 0;
+    const basGun = state.uretimBaslangicGun!=null ? state.uretimBaslangicGun : otoGun;
+    const basV = state.uretimBaslangicVardiya || 1;
+    const baslangicIdx = basGun*3 + (basV-1);
+
+    const sayi = v => { const x = parseFloat(v); return isNaN(x) ? 0 : x; };
+    const stokSayi = {}; Object.keys(state.uretimStok||{}).forEach(k => stokSayi[k] = sayi(state.uretimStok[k]));
+    const kritikSayi = {}; Object.keys(state.uretimKritik||{}).forEach(k => kritikSayi[k] = sayi(state.uretimKritik[k]));
+
+    const stokTablosu = `
+      <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:14px;">
+        <table>
+          <thead><tr><th>Ara Ürün</th><th>Eldeki Stok (adet)</th><th>Kritik Stok (adet)</th></tr></thead>
+          <tbody>
+            ${URETIM_STOK_SATIRLARI.map(s => `<tr>
+              <td>${s.ad}</td>
+              <td><input type="number" min="0" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ustok',s.key)}" data-action="uretim-stok" data-key="${s.key}" value="${(state.uretimStok||{})[s.key]!=null?state.uretimStok[s.key]:''}" placeholder="0"></td>
+              <td>${s.kritik ? `<input type="number" min="0" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ukrit',s.key)}" data-action="uretim-kritik" data-key="${s.key}" value="${(state.uretimKritik||{})[s.key]!=null?state.uretimKritik[s.key]:''}" placeholder="0">` : '<span class="hint">—</span>'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    const baslangicSecici = `
+      <div class="filters" style="margin-bottom:14px;align-items:center;">
+        <span class="hint">Plan başlangıcı:</span>
+        <select data-action="uretim-bas-gun" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+          ${GUN_ADLARI.map((a,i)=>`<option value="${i}" ${i===basGun?'selected':''}>${a} ${fmtDate(gunler[i])}</option>`).join('')}
+        </select>
+        <select data-action="uretim-bas-vardiya" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+          ${[1,2,3].map(v=>`<option value="${v}" ${v===basV?'selected':''}>${v}. vardiya</option>`).join('')}
+        </select>
+        <span class="hint">Stok değerleri bu andaki durumu göstermelidir.</span>
+      </div>`;
+
+    let planHtml = '';
+    if(gruplar.length===0){
+      planHtml = `<div class="card"><div class="empty"><b>Plan yok</b>Bu hafta için reçetesi tanımlı bekleyen sipariş bulunamadı.</div></div>`;
+    } else {
+      const sonuc = uretimPlaniHesapla({
+        gruplar, stok: stokSayi, kritik: kritikSayi, params: p, baslangicIdx
+      });
+      const saatYaz = hh => {
+        let x = ((hh%24)+24)%24; let s = Math.floor(x+1e-9); let m = Math.round((x-s)*60);
+        if(m===60){ s=(s+1)%24; m=0; }
+        return String(s).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      };
+      const sureYaz = sn => { const dk = Math.round(sn/60); return dk>=60 ? Math.floor(dk/60)+' sa '+String(dk%60).padStart(2,'0')+' dk' : dk+' dk'; };
+      const opSatirlari = (v, liste) => liste.length===0 ? '<span class="hint">Boşta</span>' : liste.map(o => `
+        <div style="margin-bottom:6px;"><b>${o.ad}</b><br><span class="mono">${o.adet} adet · ${saatYaz(v.vardiyaBasSaat + o.basSn/3600)}–${saatYaz(v.vardiyaBasSaat + (o.basSn+o.sureSn)/3600)} (${sureYaz(o.sureSn)})</span></div>`).join('');
+      const yuzde = (dolu, kap) => kap>0 ? Math.round(dolu/kap*100) : 0;
+
+      const vards = sonuc.vardiyalar;
+      const kisitliSayi = vards.filter(v=>v.kisitlandi && v.dizmeAktif).length;
+      const toplamKat = gruplar.reduce((s,g)=>{ const r=receteBul(g.kalinlik,'Standart'); return s + g.adet*(r.dizilim.length); },0);
+      const idealVardiya = sonuc.katVardiya>0 ? toplamKat/sonuc.katVardiya : 0;
+      let ozet;
+      if(sonuc.bitti){
+        const son = vards[vards.length-1];
+        ozet = `Plan <b>${GUN_ADLARI[son.dow%7]} ${fmtDate(haftaGunleriUzun(pazartesi, son.gun))}, ${son.vardiya}. vardiyada</b> biter · toplam <b>${vards.length} vardiya</b> (≈ ${(vards.length/3).toFixed(1)} gün), <b>${sonuc.toplamM3.toFixed(1)} m³</b>. Kurutma kısıtı olmasaydı dizme hattı referansına göre ≈ ${idealVardiya.toFixed(1)} vardiyada biterdi${kisitliSayi>0 ? `; ${kisitliSayi} vardiyada dizme hattı kurutma kapasitesi yüzünden hedefin altında kaldı` : ''}.`;
+      } else {
+        ozet = `Plan belirlenen süre içinde tamamlanamadı. Üretilen: <b>${sonuc.toplamM3.toFixed(1)} m³</b>.`;
+      }
+      const gecikmeGun = (sonuc.bitti && vards.length) ? Math.max(0, vards[vards.length-1].gun - 6) : 0;
+      const uyariHtml = (gecikmeGun>0 ? `<div>⚠ Plan, termin haftasının Pazar gününden sonra bitiyor (yaklaşık ${gecikmeGun} gün gecikme) — kurutma kapasitesi veya vardiya/stok planı gözden geçirilmeli.</div>` : '') + sonuc.uyari.map(u=>`<div>⚠ ${escapeHtml(u)}</div>`).join('') + (eksikRecete.length ? `<div>⚠ ${eksikRecete.join(', ')} mm için reçete tanımlı değil, plana dahil edilmedi.</div>` : '');
+
+      // günlere grupla
+      const gunGruplari = {};
+      vards.forEach(v => { (gunGruplari[v.gun] = gunGruplari[v.gun] || []).push(v); });
+      const gunBloklari = Object.keys(gunGruplari).map(Number).sort((a,b)=>a-b).map(gunNo => {
+        const liste = gunGruplari[gunNo];
+        const dow = gunNo%7;
+        const tarih = haftaGunleriUzun(pazartesi, gunNo);
+        const pazar = dow===6;
+        return `
+          <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:14px;">
+            <div style="padding:10px 14px;font-weight:700;background:${pazar?'rgba(217,119,6,0.10)':'var(--panel)'};border-bottom:1px solid var(--line);">
+              ${GUN_ADLARI[dow]} · ${fmtDate(tarih)} ${pazar ? `<span class="hint" style="font-weight:400;">· kurutma ${sayi(p.pazar_kurutma_saat)} saat, dizme ${sayi(p.pazar_dizme_aktif)>0.5?'çalışır':'kapalı — ara ürün stoğu yapılır'}</span>` : ''}
+            </div>
+            <table style="font-size:12.5px;">
+              <thead><tr><th>Vardiya</th><th>Soyma (yaş papel)</th><th>Röleli</th><th>Telli</th><th>Dizme</th><th>Vardiya Sonu Ara Stok</th></tr></thead>
+              <tbody>
+                ${liste.map(v => {
+                  const soyma = [];
+                  if(v.soyma.y230>0.5) soyma.push(`230: <b>${Math.ceil(v.soyma.y230)}</b>`);
+                  if(v.soyma.y180>0.5) soyma.push(`180: <b>${Math.ceil(v.soyma.y180)}</b>`);
+                  if(v.soyma.y12>0.5) soyma.push(`1,2 mm: <b>${Math.ceil(v.soyma.y12)}</b>`);
+                  const stokSatir = Object.keys(v.stokSon).map(k => `${havuzEtiketi(k)}: ${Math.max(0,Math.round(v.stokSon[k]))}`);
+                  stokSatir.push(`Nemli 230: ${Math.max(0,Math.round(v.nemliSon))}`);
+                  const kapali = !v.dizmeAktif;
+                  const bas = v.vardiyaBasSaat;
+                  return `<tr style="vertical-align:top;">
+                    <td><b>${v.vardiya}. vardiya</b><br><span class="hint">${saatYaz(bas)}–${saatYaz(bas+8)}</span></td>
+                    <td class="mono">${soyma.length ? soyma.join('<br>') : '<span class="hint">—</span>'}</td>
+                    <td>${opSatirlari(v, v.role)}<span class="hint">Doluluk %${yuzde(v.secR, v.capR)}</span></td>
+                    <td>${opSatirlari(v, v.telli)}<span class="hint">Doluluk %${yuzde(v.secT, v.capT)}</span></td>
+                    <td>${kapali ? '<span class="hint">Kapalı</span>' : (v.dizme.length ? v.dizme.map(d=>`<div class="mono"><b>${d.kalinlik} mm × ${d.panel}</b></div>`).join('') + `<span class="hint">${v.dizmeKat} kat · ${v.dizmeM3.toFixed(1)} m³</span>` : '<span class="hint">Üretim yok</span>')}${v.kisitlandi && v.dizmeAktif ? '<div style="color:var(--red);font-weight:600;">⚠ kurutma kapasitesi kısıtladı</div>' : ''}</td>
+                    <td class="mono" style="font-size:11.5px;line-height:1.6;">${stokSatir.join('<br>')}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }).join('');
+
+      planHtml = `
+        <div class="msg ${(sonuc.bitti && gecikmeGun===0)?'ok':'err'}" style="font-size:14px;line-height:1.7;margin-bottom:14px;">${ozet}${uyariHtml?`<div style="margin-top:6px;">${uyariHtml}</div>`:''}</div>
+        ${gunBloklari}
+      `;
+    }
+
+    return `
+      <div class="card" style="padding:16px;margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:6px;">Hat Hat Üretim Planı (Vardiya Bazlı)</h3>
+        <p class="hint" style="margin-bottom:12px;">Soyma → Röleli / Telli → Dizme hatları birbirine bağlı hesaplanır: soymadan çıkan yaş papel röleliye, röleliden çıkan nemli 230 telliye gider. Dizme hattı vardiyalık hedefi (1329 kat referansı, 10'a yuvarlanmış) sipariş sırasıyla ve kalınlık sırasıyla doldurulur; her vardiyada dizmenin tüketeceği kuru papel, eldeki stok ve kritik stok seviyesi düşülerek makinelere dağıtılır. Soyma kapasitesi sınırsız kabul edilir; sadece o vardiyada soyulması gereken yaş papel gösterilir.</p>
+        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:0 0 8px;">Eldeki Stok ve Kritik Stok</h4>
+        ${stokTablosu}
+        ${baslangicSecici}
+        ${planHtml}
+      </div>
+    `;
+  }
+  // Hafta pazartesisinden `gunNo` gün sonrasının tarihi ('YYYY-MM-DD'), 7'den büyük de olabilir.
+  function haftaGunleriUzun(pazartesiTarihi, gunNo){
+    const d = new Date(pazartesiTarihi+'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate()+gunNo);
+    return d.toISOString().slice(0,10);
   }
 
   function renderUretimPlanlamaTab(rol){
@@ -2817,7 +3195,8 @@
         ${grupTablosu}
         ${toplamBlok}
       </div>
-      ${renderKurutmaSuresiTahmini(h.toplamKirilim)}
+      ${renderHatPlani(h, haftaStr)}
+      ${renderMakineParametreleri()}
       ${renderUretimPlanlamaManuel()}
     `;
   }
@@ -3877,7 +4256,7 @@
       state.siparisFormHafta = e.target.value; // render etmeden sadece hatırla
     }
     if(e.target.matches('[data-action="planlama-hafta"]')){
-      state.uretimPlanlamaHafta = e.target.value; render();
+      state.uretimPlanlamaHafta = e.target.value; state.uretimBaslangicGun = null; state.uretimBaslangicVardiya = 1; render();
     }
     if(e.target.matches('[data-action="gunluk-tarih-baslangic"]')){
       state.gunlukBaslangic = e.target.value; render();
@@ -3894,6 +4273,17 @@
     }
     if(e.target.matches('[data-action="kurutma-param"]')){
       state.kurutmaModelParams[e.target.dataset.field] = e.target.value;
+      uretimPlaniKaydet();
+      render();
+    }
+    if(e.target.matches('[data-action="uretim-stok"]')){
+      state.uretimStok[e.target.dataset.key] = e.target.value;
+      uretimPlaniKaydet();
+      render();
+    }
+    if(e.target.matches('[data-action="uretim-kritik"]')){
+      state.uretimKritik[e.target.dataset.key] = e.target.value;
+      uretimPlaniKaydet();
       render();
     }
     if(e.target.closest('#kantar-kaydi-form')){
@@ -3923,6 +4313,12 @@
         return { file, adSiz, uzanti, yeniAd: adSiz };
       });
       render();
+    }
+    if(e.target.matches('[data-action="uretim-bas-gun"]')){
+      state.uretimBaslangicGun = parseInt(e.target.value,10); render();
+    }
+    if(e.target.matches('[data-action="uretim-bas-vardiya"]')){
+      state.uretimBaslangicVardiya = parseInt(e.target.value,10); render();
     }
     if(e.target.matches('[data-action="planlama-kalinlik"]')){
       const idx = parseInt(e.target.dataset.index);
@@ -4380,6 +4776,8 @@
     }
   });
 
+  state.uretimKritik = uretimPlaniVarsayilanKritik();
+  uretimPlaniYukle();
   document.title = "Akış";
   init();
 })();
