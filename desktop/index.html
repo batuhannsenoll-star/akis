@@ -222,7 +222,7 @@
       role_230_nemli_pct: 75, role_230_kapak_pct: 25, role_230_icli_pct: 0, role_230_fire_pct: 0,
       role_180_nemli_pct: 100, role_180_kuru_pct: 0, role_180_parca_pct: 0,
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
-      telli_230_kapak_pct: 25,
+      telli_230_kapak_pct: 25, telli_230_ikinci_sn: 30, telli_230_tekrar_pct: 0,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
       dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25, dolgu_adet: 25, dolgu_kalinlik: 12, dolgu_kapak_kat: 2
     },
@@ -2647,6 +2647,8 @@
     const sR12 = n('role_12_sn',50)/4;
     const y12 = Math.max(0.01, n('role_12_kapak_pct',40)/100);
     const sT230 = n('telli_230_sn',30), sT12 = n('telli_12_sn',50);
+    // Telliden 1. geçişte tekrar nemli çıkan oran: bu papeller 2. geçişte (farklı hızla) yeniden verilir.
+    const rT = Math.min(0.95, Math.max(0, n('telli_230_tekrar_pct',0)/100)), sT230b = n('telli_230_ikinci_sn', sT230);
     const molaDk = n('telli_mola_dk',90);
     const vardiya1Bas = n('vardiya1_baslangic',0);
     const maxGun = girdi.maxGun || 28;
@@ -2738,7 +2740,7 @@
 
     // İhtiyaç (üretilecek kuru adet) → makine işleri ve süreleri
     function zincir(needs, tampon, capT, nemliS, nemli180S){
-      const ops = { y230:0, y180nemli:0, y180tam:0, y12r:0, y12t:0, n230:0 };
+      const ops = { y230:0, y180nemli:0, y180tam:0, y12r:0, y12t:0, n230:0, n230b:0 };
       const uretim = {}; const nemliSon = Object.assign({}, nemliS);
       let secR = 0, secT = 0, y180ham = 0, y12ham = 0;
       const kuruEkle = (h,q) => { uretim[h]=(uretim[h]||0)+q; };
@@ -2763,8 +2765,8 @@
         kuruEkle('230|'+t+'|kapak', rK*y + tK*nn);
         kuruEkle('230|'+t+'|icli', rI*y + tI*nn);
         nemliSon[t] = Sn + rN*y - nn;
-        ops.y230 += y; ops.n230 += nn;
-        secR += y*sR230; secT += nn*sT230;
+        ops.y230 += y; ops.n230 += nn; ops.n230b += rT*nn;
+        secR += y*sR230; secT += nn*(sT230 + rT*sT230b);
       });
       // 180 zinciri (yalnız röleli, iki geçiş)
       let nemli180Kalan = nemli180S;
@@ -2944,7 +2946,8 @@
       mkOp(kayit.role, '180 yaş → nemli → kuru', o.y180tam, o.y180tam*(sR180a+sR180b));
       mkOp(kayit.role, '180 nemli → kuru (stoktan)', o.y180nemli, o.y180nemli*sR180b);
       mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12);
-      mkOp(kayit.telli, '230 nemli → kapak + içlik', o.n230, o.n230*sT230);
+      mkOp(kayit.telli, rT>0 ? '230 nemli → kapak + içlik (1. geçiş)' : '230 nemli → kapak + içlik', o.n230, o.n230*sT230);
+      if(rT>0) mkOp(kayit.telli, '230 tekrar nemli çıkan (2. geçiş)', o.n230b, o.n230b*sT230b);
       mkOp(kayit.telli, '1,2 mm yaş → kapak', o.y12t, o.y12t*sT12);
       let cur = 0; kayit.role.forEach(x => { x.basSn = cur; cur += x.sureSn; });
       cur = 0; kayit.telli.forEach(x => { x.basSn = cur; cur += x.sureSn; });
@@ -3070,8 +3073,11 @@
       <p class="hint" style="margin-top:6px;">Verim %40 ise 10 yaş papelden 4 kapak çıkar; plan girdi ihtiyacını buna göre büyütür (telli 1,2mm için de aynı verim kullanılır).</p>
     `);
     const telli230 = materyalCercevesi('230 (Nemli)', `
-      ${kParamInput('telli_230_sn','230 Nemli Çevrim Süresi (sn, 1 papel)')}
+      ${kParamInput('telli_230_sn','230 Nemli — 1. Geçiş Çevrim Süresi (sn, 1 papel)')}
+      ${kParamInput('telli_230_tekrar_pct','1. Geçişte Tekrar Nemli Çıkan (%)')}
+      ${kParamInput('telli_230_ikinci_sn','Tekrar Nemli — 2. Geçiş Çevrim Süresi (sn, 1 papel)')}
       ${kParamInput('telli_230_kapak_pct','Çıkan: Kapak (%) — kalanı içlik')}
+      <p class="hint" style="margin-top:6px;">1. geçişte tekrar nemli çıkan papeller 2. geçiş hızıyla yeniden verilir; sonunda hepsi kuru kapak/içlik olur. Oran 0 ise 2. geçiş hesaba katılmaz.</p>
     `);
     const telli180 = materyalCercevesi('180', `
       ${kParamInput('telli_180_sn','180 Çevrim Süresi (sn, 1 papel)')}
