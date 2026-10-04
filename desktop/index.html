@@ -2820,6 +2820,7 @@
 
       // 1) dizme planı ve fizibilite (sert ihtiyaç)
       siralaGruplar(capT);
+      const kuruBas = Object.assign({}, S.kuru), nemliBas = S.nemli['2.1']||0; // vardiya başı stokları (röleli iş sırası için)
       // dolgu hattı: bu vardiyada üretilecek panel (başlangıçta kapak stoğu yoksa başlayamaz; önceki vardiya çalıştıysa akar)
       let dolguP = 0;
       if(iDolgu>=0 && dolguAdet>0 && T.dizmeAktif && rem[iDolgu]>0){
@@ -2956,14 +2957,20 @@
       let t0 = vardiya1Bas + (T.vardiya-1)*8;
       const mkOp = (liste, ad, adet, sn, pal) => { if(adet>0.5){ liste.push({ ad, adet:Math.ceil(adet-1e-6), sureSn:clock(sn), palet: pal>0 ? Math.round(adet/pal*100)/100 : null }); return liste[liste.length-1]; } return null; };
       kayit.role = []; kayit.telli = [];
-      mkOp(kayit.role, '230 yaş → nemli + kapak', o.y230, o.y230*sR230, palet21);
+      // Röleli iş sırası: stoğu en erken tükenecek ara ürünü besleyen iş önce (dizme/telli tüketimi vardiyaya yayılır).
+      const tuk = h => (D[h]>0) ? (kuruBas[h]||0)/(D[h]/8) : Infinity;
+      const k230 = Math.min(tuk('230|2.1|kapak'), o.n230>0 ? nemliBas/(o.n230/8) : Infinity);
+      const k180 = Math.min(tuk('180|2.1'), tuk('180|2.3'));
+      const k12 = tuk('230|1.2');
+      { const x = mkOp(kayit.role, '230 yaş → nemli + kapak', o.y230, o.y230*sR230, palet21); if(x) x.anahtar = k230; }
       { const x = mkOp(kayit.role, '180 yaş → nemli → kuru', o.y180tam, o.y180tam*(sR180a+sR180b), 0);
-        if(x && o.y180pal>0.01){ const p = Math.round(o.y180pal*100)/100; x.paletMetin = p + ' palet' + (o.y180srb>0.5 ? ' + ' + Math.round(o.y180srb) + ' adet' : ''); } }
-      mkOp(kayit.role, '180 nemli → kuru (stoktan)', o.y180nemli, o.y180nemli*sR180b);
-      mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12, palet12);
+        if(x){ x.anahtar = k180; if(o.y180pal>0.01){ const p = Math.round(o.y180pal*100)/100; x.paletMetin = p + ' palet' + (o.y180srb>0.5 ? ' + ' + Math.round(o.y180srb) + ' adet' : ''); } } }
+      { const x = mkOp(kayit.role, '180 nemli → kuru (stoktan)', o.y180nemli, o.y180nemli*sR180b); if(x) x.anahtar = k180; }
+      { const x = mkOp(kayit.role, '1,2 mm yaş → kapak', o.y12r, o.y12r*sR12, palet12); if(x) x.anahtar = k12; }
       mkOp(kayit.telli, rT>0 ? '230 nemli → kapak + içlik (1. geçiş)' : '230 nemli → kapak + içlik', o.n230, o.n230*sT230);
       if(rT>0) mkOp(kayit.telli, '230 tekrar nemli çıkan (2. geçiş)', o.n230b, o.n230b*sT230b);
       mkOp(kayit.telli, '1,2 mm yaş → kapak', o.y12t, o.y12t*sT12);
+      kayit.role = kayit.role.map((x,i)=>({x,i})).sort((a,b)=> ((a.x.anahtar<b.x.anahtar)?-1:(a.x.anahtar>b.x.anahtar)?1:0) || (a.i-b.i)).map(z=>z.x);
       let cur = 0; kayit.role.forEach(x => { x.basSn = cur; cur += x.sureSn; });
       cur = 0; kayit.telli.forEach(x => { x.basSn = cur; cur += x.sureSn; });
       kayit.roleDoluSn = kayit.role.reduce((s,x)=>s+x.sureSn,0);
