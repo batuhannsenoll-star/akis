@@ -184,6 +184,7 @@
     authBusy: false,
     modul: null,           // 'satis' | 'uretim'
     activeTab: 'liste',
+    siparisFormHafta: '', // son girilen 'YYYY-Www'; art arda sipariş girerken hafta korunur
     filterStatus: 'bekliyor',
     search: '',
     orders: [],
@@ -1034,7 +1035,7 @@
         <p class="hint" style="margin-bottom:16px;">${isEdit?'Değişiklikler kayıt altına alınır ve düzenleme tarihi görünür olur.':'Sipariş bilgilerini girin — m³ otomatik hesaplanır.'}</p>
         <form id="order-form">
           <div class="form-grid">
-            <div class="field full"><label>Üretilecek Hafta</label><input type="week" name="hafta" required value="${o.termin_tarihi ? tarihToHaftaStr(o.termin_tarihi) : tarihToHaftaStr(todayStr())}"><div class="hint">Termin tarihi otomatik olarak seçilen haftanın son günü (Pazar) olur.</div></div>
+            <div class="field full"><label>Üretilecek Hafta</label><input type="week" name="hafta" required value="${o.termin_tarihi ? tarihToHaftaStr(o.termin_tarihi) : (state.siparisFormHafta || tarihToHaftaStr(todayStr()))}"><div class="hint">Termin tarihi otomatik olarak seçilen haftanın son günü (Pazar) olur.</div></div>
             <div class="field full"><label>Cins</label><select name="cins" required>
               <option value="" disabled ${!o.cins?'selected':''}>Seçiniz…</option>
               ${CINS_OPTIONS.map(c=>`<option value="${escapeHtml(c)}" ${o.cins===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
@@ -3866,6 +3867,9 @@
     if(e.target.matches('[data-action="ozet-hafta"]')){
       state.ozetHafta = e.target.value; render();
     }
+    if(e.target.matches('#order-form [name="hafta"]') && !(state.modal && state.modal.type==='edit')){
+      state.siparisFormHafta = e.target.value; // render etmeden sadece hatırla
+    }
     if(e.target.matches('[data-action="planlama-hafta"]')){
       state.uretimPlanlamaHafta = e.target.value; render();
     }
@@ -4013,8 +4017,8 @@
       } else {
         const payload = Object.assign({}, data, { sorumlu_id: state.user.id, status:'bekliyor', asama: ASAMA_OPTIONS[0] });
         const { error } = await sb.from('siparisler').insert([payload]);
-        state.toast = error ? {type:'err', text:'Eklenemedi: '+error.message} : {type:'ok', text:'Sipariş eklendi.'};
-        state.activeTab = 'takip';
+        state.toast = error ? {type:'err', text:'Eklenemedi: '+error.message} : {type:'ok', text:'Sipariş eklendi — aynı haftadan devam edebilirsiniz.'};
+        state.siparisFormHafta = f.hafta.value;
       }
       await loadOrders(true);
     }
