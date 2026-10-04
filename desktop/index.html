@@ -3107,7 +3107,7 @@
           ${kParamInput('dizme_baslama_saat','Dizme Başlama Stoğu (saatlik tüketim)')}
           ${kParamInput('dolgu_adet','Dolgu Hattı Vardiyalık Üretim (adet)')}
           ${kParamInput('dolgu_kalinlik','Dolgu Hattı Kalınlığı (mm)')}
-          ${kParamInput('dolgu_kapak_kat','Dolgu Panel Başına 2,1 mm Kapak (adet)')}
+          ${kParamInput('dolgu_kapak_kat','Dolgu Kontraplak Başına 2,1 mm Kapak (adet)')}
         </div>
       </div>
     `;
@@ -3281,7 +3281,7 @@
     ` : `
       <div class="card" style="padding:0;box-shadow:none;border:1px solid var(--line);margin-bottom:16px;">
         <table>
-          <thead><tr><th>Panel Kalınlığı</th><th>Sipariş Sayısı</th><th>Toplam Adet</th><th>Kapak (230)</th><th>Tutkallı (180)</th><th>İçlik (230)</th><th>Toplam m³</th></tr></thead>
+          <thead><tr><th>Kontraplak Kalınlığı</th><th>Sipariş Sayısı</th><th>Toplam Adet</th><th>Kapak (230)</th><th>Tutkallı (180)</th><th>İçlik (230)</th><th>Toplam m³</th></tr></thead>
           <tbody>
             ${h.gruplar.map(g => g.sonuc ? `
               <tr>
@@ -3312,7 +3312,7 @@
     return `
       <div class="card" style="padding:16px;margin-top:0;">
         <h3 style="font-size:14px;margin-bottom:10px;">Haftalık Sipariş Bazlı Papel İhtiyacı</h3>
-        <p class="hint" style="margin-bottom:12px;">Seçili haftada termin tarihi bu haftaya denk gelen bekleyen siparişler Sipariş Takip'ten otomatik çekilir. Her panel kalınlığı için gereken papel sayısı aşağıda, haftanın toplam ihtiyacı da kalınlık ve besleme yönüne (230/180) göre altta gösterilir.</p>
+        <p class="hint" style="margin-bottom:12px;">Seçili haftada termin tarihi bu haftaya denk gelen bekleyen siparişler Sipariş Takip'ten otomatik çekilir. Her kontraplak kalınlığı için gereken papel sayısı aşağıda, haftanın toplam ihtiyacı da kalınlık ve besleme yönüne (230/180) göre altta gösterilir.</p>
         ${secici}
         ${grupTablosu}
         ${toplamBlok}
