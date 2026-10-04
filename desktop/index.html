@@ -224,7 +224,7 @@
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
       telli_230_kapak_pct: 25,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
-      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 1
+      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25
     },
     uretimStok: {}, // eldeki ara ürün stoğu (adet), anahtarlar URETIM_STOK_SATIRLARI'nda
     uretimKritik: {}, // kritik (asgari) ara ürün stoğu (adet)
@@ -2617,12 +2617,14 @@
     const pazarSaat = Math.min(24, Math.max(0, n('pazar_kurutma_saat',16)));
     const pazarDizme = n('pazar_dizme_aktif',0) > 0.5;
     const dagit = toplam => [0,1,2].map(i => Math.max(0, Math.min(8, toplam - 8*i)));
+    // Pazar kurutması vardiya sonuna yaslanır: 16 saat = 16:00'da başlar, ertesi sabah 08:00'de biter (2. ve 3. vardiya).
+    const dagitSon = toplam => [Math.max(0, Math.min(8, toplam-16)), Math.max(0, Math.min(8, toplam-8)), Math.max(0, Math.min(8, toplam))];
     const liste = [];
     for(let g=0; g<gunSayisi; g++){
       const dow = g%7; // 0=Pzt ... 6=Paz
       const pazar = dow===6;
-      const roleSaat = dagit(pazar ? Math.min(roleGun, pazarSaat) : roleGun);
-      const telliSaat = dagit(pazar ? pazarSaat : 24);
+      const roleSaat = pazar ? dagitSon(Math.min(roleGun, pazarSaat)) : dagit(roleGun);
+      const telliSaat = pazar ? dagitSon(pazarSaat) : dagit(24);
       for(let v=0; v<3; v++){
         liste.push({ gun:g, dow, vardiya:v+1, roleSaat:roleSaat[v], telliSaat:telliSaat[v], dizmeAktif: pazar ? pazarDizme : true });
       }
@@ -2673,8 +2675,10 @@
     // Dizme bir kalınlığa ancak vardiya başında, kullanacağı her kuru ara üründen en az
     // "başlama stoğu" (dizme_baslama_saat saatlik tüketim) kadar stok varsa başlayabilir.
     // Kritik stok bu kapı için KULLANILMAZ; yalnız ara ürün üretim önceliğini belirler.
-    const basSaat = Math.max(0, n('dizme_baslama_saat',1));
+    const basSaat = Math.max(0, n('dizme_baslama_saat',0.25));
+    let oncePanel = new Array(gruplar.length).fill(0); // önceki vardiyada çalışan kalınlıklar: hat akıyor, kapı aranmaz
     function grupBaslayabilir(i){
+      if(oncePanel[i] > 0) return true;
       const g = gruplar[i];
       return Object.keys(g.talepPerPanel).every(h => {
         const gerek = Math.max(1, g.talepPerPanel[h]*g.hedef10*basSaat/8);
@@ -2886,6 +2890,7 @@
       }
       sonuc = enIyi;
 
+      oncePanel = panels.slice();
       // 3) stok güncelle
       Object.entries(sonuc.uretim).forEach(([h,q]) => { S.kuru[h] = (S.kuru[h]||0)+q; });
       Object.entries(D).forEach(([h,q]) => { S.kuru[h] = (S.kuru[h]||0)-q; });
