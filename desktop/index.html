@@ -2920,6 +2920,8 @@
       window.localStorage.setItem(URETIM_PLAN_LS_KEY, JSON.stringify({ params: fark, stok: state.uretimStok, kritik: state.uretimKritik }));
     }catch(e){ /* sessiz geç */ }
   }
+  // Sayı alanları type="text": number alanlarında her tuşta yeniden çizim imleci başa atıyordu (rakamlar ters yazılıyordu).
+  function temizSayi(v){ return String(v).replace(',', '.').replace(/[^0-9.]/g,''); }
   function uretimInputId(onek, key){ return onek+'-'+String(key).replace(/[^a-zA-Z0-9]/g,'_'); }
 
   function saatDkFormat(saat){
@@ -2931,7 +2933,7 @@
   function kParamInput(field, label, opts){
     opts = opts || {};
     const val = state.kurutmaModelParams[field];
-    return `<div class="field"><label>${label}</label><input type="number" id="kparam-${field}" step="${opts.step||'any'}" min="0" data-action="kurutma-param" data-field="${field}" value="${val==null?'':val}"></div>`;
+    return `<div class="field"><label>${label}</label><input type="text" inputmode="decimal" autocomplete="off" id="kparam-${field}" data-action="kurutma-param" data-field="${field}" value="${val==null?'':val}"></div>`;
   }
 
   // Tek bir materyal (230 / 180 / 1,2mm) için çevrim süresi + çıktı oranı alanlarını
@@ -3055,8 +3057,8 @@
           <tbody>
             ${URETIM_STOK_SATIRLARI.map(s => `<tr>
               <td>${s.ad}</td>
-              <td><input type="number" min="0" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ustok',s.key)}" data-action="uretim-stok" data-key="${s.key}" value="${(state.uretimStok||{})[s.key]!=null?state.uretimStok[s.key]:''}" placeholder="0"></td>
-              <td>${s.kritik ? `<input type="number" min="0" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ukrit',s.key)}" data-action="uretim-kritik" data-key="${s.key}" value="${(state.uretimKritik||{})[s.key]!=null?state.uretimKritik[s.key]:''}" placeholder="0">` : '<span class="hint">—</span>'}</td>
+              <td><input type="text" inputmode="numeric" autocomplete="off" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ustok',s.key)}" data-action="uretim-stok" data-key="${s.key}" value="${(state.uretimStok||{})[s.key]!=null?state.uretimStok[s.key]:''}" placeholder="0"></td>
+              <td>${s.kritik ? `<input type="text" inputmode="numeric" autocomplete="off" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" id="${uretimInputId('ukrit',s.key)}" data-action="uretim-kritik" data-key="${s.key}" value="${(state.uretimKritik||{})[s.key]!=null?state.uretimKritik[s.key]:''}" placeholder="0">` : '<span class="hint">—</span>'}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -4298,17 +4300,17 @@
       if(s){ s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
     }
     if(e.target.matches('[data-action="kurutma-param"]')){
-      state.kurutmaModelParams[e.target.dataset.field] = e.target.value;
+      state.kurutmaModelParams[e.target.dataset.field] = temizSayi(e.target.value);
       uretimPlaniKaydet();
       render();
     }
     if(e.target.matches('[data-action="uretim-stok"]')){
-      state.uretimStok[e.target.dataset.key] = e.target.value;
+      state.uretimStok[e.target.dataset.key] = temizSayi(e.target.value);
       uretimPlaniKaydet();
       render();
     }
     if(e.target.matches('[data-action="uretim-kritik"]')){
-      state.uretimKritik[e.target.dataset.key] = e.target.value;
+      state.uretimKritik[e.target.dataset.key] = temizSayi(e.target.value);
       uretimPlaniKaydet();
       render();
     }
