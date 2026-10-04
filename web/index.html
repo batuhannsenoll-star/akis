@@ -232,7 +232,7 @@
       role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
       telli_230_kapak_pct: 25,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
-      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 0
+      dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8
     },
     uretimStok: {}, // eldeki ara ürün stoğu (adet), anahtarlar URETIM_STOK_SATIRLARI'nda
     uretimKritik: {}, // kritik (asgari) ara ürün stoğu (adet)
@@ -3105,7 +3105,7 @@
                   const kapali = !v.dizmeAktif;
                   const bas = v.vardiyaBasSaat;
                   return `<tr style="vertical-align:top;">
-                    <td><b>${v.vardiya}. vardiya</b><br><span class="hint">${saatYaz(bas)}–${saatYaz(bas+8)}</span></td>
+                    <td><b>${v.vardiya}. vardiya</b><br><span class="hint">${saatYaz(bas)}–${saatYaz(bas+8)}${bas>=24?' (ertesi gün)':''}</span></td>
                     <td class="mono">${soyma.length ? soyma.join('<br>') : '<span class="hint">—</span>'}</td>
                     <td>${opSatirlari(v, v.role)}<span class="hint">Doluluk %${yuzde(v.secR, v.capR)}</span></td>
                     <td>${opSatirlari(v, v.telli)}<span class="hint">Doluluk %${yuzde(v.secT, v.capT)}</span></td>
