@@ -1053,7 +1053,7 @@
             <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" required value="${o.boy||''}"></div>
             <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${o.kalinlik||''}"></div>
             <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${o.adet||''}"></div>
-            <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="m3-readout" readonly value="${(o.m3||0).toFixed(3)}"></div>
+            <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="m3-readout" readonly tabindex="-1" value="${(o.m3||0).toFixed(3)}"></div>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn primary">${isEdit?'Kaydet':'Siparişi Ekle'}</button>
@@ -3420,7 +3420,7 @@
             </div>
             <div class="field readout">
               <label>Kaç m³ Olacak</label>
-              <input type="text" readonly value="${v.panelHacmiM3Gosterim>0 ? v.m3Gosterim.toFixed(3)+' m³' : '—'}">
+              <input type="text" readonly tabindex="-1" value="${v.panelHacmiM3Gosterim>0 ? v.m3Gosterim.toFixed(3)+' m³' : '—'}">
             </div>
             ${satirVerileri.length>1 ? `<div class="field" style="flex:0 0 auto;">
               <label>&nbsp;</label>
@@ -3494,7 +3494,7 @@
             <div class="form-grid">
               <div class="field"><label>Üretim Tarihi</label><input type="date" name="uretim_tarihi" required value="${todayStr()}"></div>
               <div class="field"><label>Gerçekleşen Adet</label><input type="number" step="1" min="0" name="gercek_adet" required value="${o.adet}"></div>
-              <div class="field readout"><label>Gerçekleşen m³ (otomatik)</label><input type="text" id="gercek-m3-readout" readonly value="${(o.m3||0).toFixed(3)}"></div>
+              <div class="field readout"><label>Gerçekleşen m³ (otomatik)</label><input type="text" id="gercek-m3-readout" readonly tabindex="-1" value="${(o.m3||0).toFixed(3)}"></div>
               <div class="field full"><label>Not / Açıklama</label><textarea name="uretim_notu" rows="3" placeholder="opsiyonel"></textarea></div>
             </div>
             <div class="form-actions">
@@ -3637,7 +3637,7 @@
               <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" value="${r.kalinlik||''}"></div>
               <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${r.adet||''}"></div>
               <div class="field"><label>Fire Adet</label><input type="number" step="1" min="0" name="fire_adet" value="${r.fire_adet||0}"></div>
-              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="uk-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="uk-m3-readout" readonly tabindex="-1" value="${(r.m3||0).toFixed(3)}"></div>
             </div>
             <div class="form-actions">
               ${!isEdit ? `<button type="submit" name="_devam" value="1" class="btn primary">Kaydet ve Yeni Ekle</button>` : ''}
@@ -3765,7 +3765,7 @@
               <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" required value="${r.boy||''}"></div>
               <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${r.kalinlik||''}"></div>
               <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${r.adet||''}"></div>
-              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="mp-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="mp-m3-readout" readonly tabindex="-1" value="${(r.m3||0).toFixed(3)}"></div>
               <div class="field"><label>Kalıp</label><input type="text" name="makine" list="mp-makine-list" value="${escapeHtml(r.makine||'')}" placeholder="örn. 221"></div>
               <div class="field"><label>Cins</label><input type="text" name="cins" list="mp-cins-list" value="${escapeHtml(r.cins||'')}" placeholder="örn. Huş/Huş"></div>
               <div class="field"><label>Usta</label><input type="text" name="usta" list="mp-usta-list" value="${escapeHtml(r.usta||'')}"></div>
@@ -3897,8 +3897,8 @@
               <div class="field"><label>İ.B.</label><input type="number" step="any" name="i_b" ${r.calisma_yok?'disabled':'required'} value="${r.i_b!=null?r.i_b:''}"></div>
               <div class="field"><label>M.G.</label><input type="number" step="any" name="m_g" ${r.calisma_yok?'disabled':'required'} value="${r.m_g!=null?r.m_g:''}"></div>
               <div class="field"><label>Eklenen <span class="hint">(yeni stok geldiyse)</span></label><input type="number" step="any" name="eklenen" value="${r.eklenen||0}"></div>
-              <div class="field readout"><label>Harcanan (otomatik)</label><input type="text" id="tk-harcanan-readout" readonly value="${r.harcanan!=null?r.harcanan:0}"></div>
-              <div class="field readout"><label>Kalan (otomatik)</label><input type="text" id="tk-kalan-readout" readonly value="${r.kalan!=null?r.kalan:0}"></div>
+              <div class="field readout"><label>Harcanan (otomatik)</label><input type="text" id="tk-harcanan-readout" readonly tabindex="-1" value="${r.harcanan!=null?r.harcanan:0}"></div>
+              <div class="field readout"><label>Kalan (otomatik)</label><input type="text" id="tk-kalan-readout" readonly tabindex="-1" value="${r.kalan!=null?r.kalan:0}"></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -3971,7 +3971,7 @@
               <div class="field"><label>Tedarikçi</label><input type="text" name="tedarikci" value="${escapeHtml(r.tedarikci||'')}"></div>
               <div class="field"><label>Plaka</label><input type="text" name="plaka" value="${escapeHtml(r.plaka||'')}"></div>
               <div class="field full"><label>Ölçü Kategorisi</label><input list="kategori-list" type="text" name="olcu_kategori" required value="${escapeHtml(r.olcu_kategori||'')}" placeholder="ör. 180x230"><datalist id="kategori-list">${kategoriler.map(k=>`<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
-              <div class="field readout full"><label>m³ (otomatik, ${ayar('kavak_yogunluk_kg_m3',730)} kg/m³ ile)</label><input type="text" id="kantar-m3-readout" readonly value="${r.kilo?(r.kilo/ayar('kavak_yogunluk_kg_m3',730)).toFixed(3):'0.000'}"></div>
+              <div class="field readout full"><label>m³ (otomatik, ${ayar('kavak_yogunluk_kg_m3',730)} kg/m³ ile)</label><input type="text" id="kantar-m3-readout" readonly tabindex="-1" value="${r.kilo?(r.kilo/ayar('kavak_yogunluk_kg_m3',730)).toFixed(3):'0.000'}"></div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Kaydet</button>
@@ -4004,7 +4004,7 @@
               <div class="field"><label>Adet / Palet</label><input type="number" step="any" min="0" name="adet_palet" id="soyma-adet-palet" required value="${r.adet_palet||(r.kalinlik==2.1?400:700)}"></div>
               <div class="field"><label>En (cm)</label><input type="number" step="any" min="0" name="en" id="soyma-en" required value="${r.en||230}"></div>
               <div class="field"><label>Boy (cm)</label><input type="number" step="any" min="0" name="boy" id="soyma-boy" required value="${r.boy||180}"></div>
-              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="soyma-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
+              <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="soyma-m3-readout" readonly tabindex="-1" value="${(r.m3||0).toFixed(3)}"></div>
               <div class="field full"><label>Tomruk Kategorisi (hangi stoktan düşülsün)</label><input list="soyma-kategori-list" type="text" name="tomruk_kategori" required value="${escapeHtml(r.tomruk_kategori||'')}" placeholder="ör. 180x230"><datalist id="soyma-kategori-list">${kategoriler.map(k=>`<option value="${escapeHtml(k)}">`).join('')}</datalist></div>
             </div>
             <div class="form-actions">
