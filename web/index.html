@@ -764,7 +764,7 @@
       rows = state.disPapelHareketleri.map(r => [r.tarih, r.olcu_tur, r.hareket_tipi==='giris'?'Giriş':'Çıkış', r.miktar, r.aciklama||'']);
     } else if(key==='mob_pres'){
       filename = 'mobilya_pres_uretim';
-      header = ['Tarih','Vardiya','En','Boy','Kalınlık','Adet','m³','Makine','Cins','Usta','Firma','Açıklama'];
+      header = ['Tarih','Vardiya','En','Boy','Kalınlık','Adet','m³','Kalıp','Cins','Usta','Firma','Açıklama'];
       rows = state.presUretim.map(r => [r.tarih, r.vardiya, r.en, r.boy, r.kalinlik, r.adet, r.m3||0, r.makine||'', r.cins||'', r.usta||'', r.firma||'', r.aciklama||'']);
     } else if(key==='mob_cnc'){
       filename = 'mobilya_cnc_islem';
@@ -2346,7 +2346,7 @@
 
       return `<div class="card" style="margin-bottom:16px;overflow:hidden;">
         <table>
-          <thead><tr><th style="width:1%;"></th><th>Ölçü</th><th>Makine</th><th>Cins</th><th>Usta</th><th>Firma</th><th>Adet</th><th>m³</th><th></th></tr></thead>
+          <thead><tr><th style="width:1%;"></th><th>Ölçü</th><th>Kalıp</th><th>Cins</th><th>Usta</th><th>Firma</th><th>Adet</th><th>m³</th><th></th></tr></thead>
           <tbody>
             <tr><td colspan="9" style="font-weight:800;font-size:14px;background:var(--amber);color:#1c1f22;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</td></tr>
             ${bloklar}
@@ -3744,7 +3744,7 @@
       </div></div>`;
     }
     if(m.type==='pres-kaydi'){
-      const r = m.kayit || {};
+      const r = m.kayit || m.onceki || {};
       const isEdit = !!m.kayit;
       const makineListesi = benzersizDegerler(state.presUretim, 'makine');
       const cinsListesi = benzersizDegerler(state.presUretim, 'cins');
@@ -3766,7 +3766,7 @@
               <div class="field"><label>Kalınlık (mm)</label><input type="number" step="any" min="0" name="kalinlik" required value="${r.kalinlik||''}"></div>
               <div class="field"><label>Adet</label><input type="number" step="1" min="0" name="adet" required value="${r.adet||''}"></div>
               <div class="field readout"><label>m³ (otomatik)</label><input type="text" id="mp-m3-readout" readonly value="${(r.m3||0).toFixed(3)}"></div>
-              <div class="field"><label>Makine</label><input type="text" name="makine" list="mp-makine-list" value="${escapeHtml(r.makine||'')}" placeholder="örn. 221"></div>
+              <div class="field"><label>Kalıp</label><input type="text" name="makine" list="mp-makine-list" value="${escapeHtml(r.makine||'')}" placeholder="örn. 221"></div>
               <div class="field"><label>Cins</label><input type="text" name="cins" list="mp-cins-list" value="${escapeHtml(r.cins||'')}" placeholder="örn. Huş/Huş"></div>
               <div class="field"><label>Usta</label><input type="text" name="usta" list="mp-usta-list" value="${escapeHtml(r.usta||'')}"></div>
               <div class="field"><label>Firma (opsiyonel)</label><input type="text" name="firma" list="mp-firma-list" value="${escapeHtml(r.firma||'')}"></div>
@@ -4774,8 +4774,13 @@
         ({ error } = await sb.from('mobilya_pres_uretim').insert([Object.assign({}, data, { created_by: state.user.id })]));
       }
       state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Pres kaydı kaydedildi.'};
-      state.modal = null;
+      // Yeni kayıtta pencere kapanmaz: form bir sonraki kayıt için hazırlanır (adet ve açıklama boşalır, diğer alanlar korunur).
+      const yeniKayitMi = !state.modal.kayit;
+      state.modal = (!error && yeniKayitMi)
+        ? { type:'pres-kaydi', kayit:null, onceki:{ tarih:data.tarih, vardiya:data.vardiya, en:data.en, boy:data.boy, kalinlik:data.kalinlik, makine:data.makine, cins:data.cins, usta:data.usta, firma:data.firma } }
+        : null;
       await loadPres(true);
+      if(state.modal){ setTimeout(() => { const a = document.querySelector('#pres-kaydi-form [name="adet"]'); if(a){ a.focus(); a.select(); } }, 60); }
     }
 
     else if(e.target.id==='cnc-kaydi-form'){
