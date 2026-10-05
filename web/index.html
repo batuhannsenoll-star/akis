@@ -4774,13 +4774,13 @@
         ({ error } = await sb.from('mobilya_pres_uretim').insert([Object.assign({}, data, { created_by: state.user.id })]));
       }
       state.toast = error ? {type:'err', text:'Kaydedilemedi: '+error.message} : {type:'ok', text:'Pres kaydı kaydedildi.'};
-      // Yeni kayıtta pencere kapanmaz: form bir sonraki kayıt için hazırlanır (adet ve açıklama boşalır, diğer alanlar korunur).
+      // Yeni kayıtta pencere kapanmaz: form bir sonraki kayıt için hazırlanır (adet ve açıklama boşalır, diğer alanlar korunur; imleç En alanına gelir).
       const yeniKayitMi = !state.modal.kayit;
       state.modal = (!error && yeniKayitMi)
         ? { type:'pres-kaydi', kayit:null, onceki:{ tarih:data.tarih, vardiya:data.vardiya, en:data.en, boy:data.boy, kalinlik:data.kalinlik, makine:data.makine, cins:data.cins, usta:data.usta, firma:data.firma } }
         : null;
       await loadPres(true);
-      if(state.modal){ setTimeout(() => { const a = document.querySelector('#pres-kaydi-form [name="adet"]'); if(a){ a.focus(); a.select(); } }, 60); }
+      if(state.modal){ setTimeout(() => { const a = document.querySelector('#pres-kaydi-form [name="en"]'); if(a){ a.focus(); a.select(); } }, 60); }
     }
 
     else if(e.target.id==='cnc-kaydi-form'){
