@@ -229,7 +229,7 @@
       telli_230_sn: 30, telli_180_sn: 35, telli_12_sn: 50,
       role_230_nemli_pct: 75, role_230_kapak_pct: 25, role_230_icli_pct: 0, role_230_fire_pct: 0,
       role_180_nemli_pct: 100, role_180_kuru_pct: 0, role_180_parca_pct: 0,
-      role_12_kapak_pct: 40, role_12_nemli_pct: 0, role_12_parca_pct: 60,
+      role_12_kapak_pct: 60, role_12_nemli_pct: 0, role_12_parca_pct: 40,
       telli_230_kapak_pct: 25, telli_230_ikinci_sn: 30, telli_230_tekrar_pct: 0, yas_palet_21: 300, yas_palet_23: 0, yas_palet_12: 0,
       telli_mola_dk: 90, role_gunluk_saat: 24, hata_payi_pct: 10,
       dizme_kat_vardiya: 1329, pazar_kurutma_saat: 16, pazar_dizme_aktif: 0, vardiya1_baslangic: 8, dizme_baslama_saat: 0.25, dolgu_adet: 25, dolgu_kalinlik: 12, dolgu_kapak_kat: 2
@@ -2650,8 +2650,8 @@
     const sR230 = n('role_230_sn',60)/4;
     const sR180a = n('role_180_sn',45)/4, sR180b = n('role_180_nemli_sn',35)/4;
     const p180 = Math.min(0.9, Math.max(0, n('role_180_parca_pct',0)/100));
-    const sR12 = n('role_12_sn',50)/4;
-    const y12 = Math.max(0.01, n('role_12_kapak_pct',40)/100);
+    const sR12 = n('role_12_sn',50);
+    const y12 = Math.max(0.01, n('role_12_kapak_pct',60)/100);
     const sT230 = n('telli_230_sn',30), sT12 = n('telli_12_sn',50);
     // Yaş palet: röleliye verilen yaş papel palet bitmeden kaldırılmaz → yaş girdi tam palet katına yukarı yuvarlanır (0 = serbest).
     const palet21 = Math.max(0, n('yas_palet_21',300)), palet23 = Math.max(0, n('yas_palet_23',0)), palet12 = Math.max(0, n('yas_palet_12',0));
@@ -3092,13 +3092,13 @@
       <p class="hint" style="margin-top:6px;">180 sadece röleliden iki geçişle geçer; plan yalnızca "Parça (%)" kaybını hesaba katar.</p>
     `);
     const role12 = materyalCercevesi('1,2mm', `
-      ${kParamInput('role_12_sn','1,2mm Çevrim Süresi (sn, 4 papel)')}
+      ${kParamInput('role_12_sn','1,2mm Çevrim Süresi (sn, 1 papel)')}
       ${oranGrid(`
         ${kParamInput('role_12_kapak_pct','Kapak / Verim (%)')}
         ${kParamInput('role_12_nemli_pct','Nemli — İşlenmiyor (%)')}
         ${kParamInput('role_12_parca_pct','Parça (%)')}
       `)}
-      <p class="hint" style="margin-top:6px;">Verim %40 ise 10 yaş papelden 4 kapak çıkar; plan girdi ihtiyacını buna göre büyütür (telli 1,2mm için de aynı verim kullanılır).</p>
+      <p class="hint" style="margin-top:6px;">Verim %60 ise 5 yaş papelden 3 kapak çıkar; plan girdi ihtiyacını buna göre büyütür (telli 1,2mm için de aynı verim kullanılır).</p>
     `);
     const telli230 = materyalCercevesi('230 (Nemli)', `
       ${kParamInput('telli_230_sn','230 Nemli — 1. Geçiş Çevrim Süresi (sn, 1 papel)')}
