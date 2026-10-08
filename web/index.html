@@ -159,6 +159,10 @@
     .search{min-width:0;width:100%;margin-left:0;}
     .summary{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
   }
+  .gv-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:#22262B;color:#fff;font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:260px;}
+  .gv-tip b{display:block;margin-bottom:2px;}
+  .gv-hit:hover{fill-opacity:.05;}
+  .gv-hit-row:hover{background:#f6f5f2;border-radius:6px;}
 </style>
 </head>
 <body>
@@ -847,6 +851,7 @@
       {key:'mob_giyotin', label:'Giyotin Kesim', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_dis_papel', label:'Dış Papel Stoğu', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_pres', label:'Pres Hattı', roller:['mobilya_vardiya_amiri','admin','patron']},
+      {key:'mob_grafik', label:'Pres Grafikleri', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_cnc', label:'CNC Hattı', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_zimpara_fitil', label:'Zımpara / Fitil Çakımı', roller:['mobilya_vardiya_amiri','admin','patron']},
       {key:'mob_cizimler', label:'Çizimler', roller:['mobilya_vardiya_amiri','admin','patron']},
@@ -858,6 +863,7 @@
     {key:'gunluk', label:'Günlük Kayıtlar'},
     {key:'ozet', label:'Aylık Özet'},
     {key:'yillik', label:'Yıllık Özet'},
+    {key:'grafik', label:'Yıllık Grafikler'},
     {key:'tutkal', label:'Tutkal Takip'},
     {key:'kapasite', label:'Kapasite Raporu'},
     {key:'torna', label:'Torna'},
@@ -960,6 +966,7 @@
       case 'mob_giyotin': return renderGiyotinTab(rol);
       case 'mob_dis_papel': return renderDisPapelTab(rol);
       case 'mob_pres': return renderPresTab(rol);
+      case 'mob_grafik': return renderMobilyaGrafikSayfasi();
       case 'mob_cnc': return renderCncTab(rol);
       case 'mob_zimpara_fitil': return renderZimparaFitilTab(rol);
       case 'mob_cizimler': return renderCizimlerTab(rol);
@@ -1421,6 +1428,280 @@
     </div>`;
   }
 
+  // ---------- Yıllık grafikler (satır içi SVG; harici kütüphane yok) ----------
+  const GV_RENKLER = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#4a3aa7'];
+  const GV_DIGER = '#a8a7a1';
+  const GV_AYLAR = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+  function gvFmt(n, d){ d = d==null ? 1 : d; return (Number(n)||0).toLocaleString('tr-TR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+  function gvNice(max){
+    if(!(max>0)) return { top:1, ticks:[0,1] };
+    const p = Math.pow(10, Math.floor(Math.log10(max)));
+    const m = max/p;
+    const adaylar = [[1,0.25],[2,0.5],[3,1],[4,1],[5,1],[6,2],[8,2],[10,2]];
+    const a = adaylar.find(x=>x[0]>=m-1e-9) || [10,2];
+    const top = a[0]*p, step = a[1]*p, ticks = [];
+    for(let v=0; v<=top+1e-9; v+=step) ticks.push(v);
+    return { top, ticks };
+  }
+  // Kayıtları ay (0-11) bazında toplar. keyFn verilirse {anahtar:[12 ay]} döner.
+  function gvAylikTopla(kayitlar, yil, alanFn, keyFn){
+    const bos = () => new Array(12).fill(0);
+    if(!keyFn){
+      const v = bos();
+      kayitlar.forEach(r => { if(r.tarih && r.tarih.slice(0,4)===yil){ v[parseInt(r.tarih.slice(5,7),10)-1] += alanFn(r)||0; } });
+      return v;
+    }
+    const m = {};
+    kayitlar.forEach(r => {
+      if(!(r.tarih && r.tarih.slice(0,4)===yil)) return;
+      const k = keyFn(r); if(!m[k]) m[k] = bos();
+      m[k][parseInt(r.tarih.slice(5,7),10)-1] += alanFn(r)||0;
+    });
+    return m;
+  }
+  // En çok n anahtarı seçer, geri kalanı "Diğer"de toplar
+  function gvSeriler(aylikMap, n){
+    const toplam = {}; Object.keys(aylikMap).forEach(k => { toplam[k] = aylikMap[k].reduce((s,x)=>s+x,0); });
+    const sirali = Object.keys(toplam).filter(k=>toplam[k]>0).sort((a,b)=>toplam[b]-toplam[a]);
+    const ilk = sirali.slice(0,n), kalan = sirali.slice(n);
+    const seriler = ilk.map((k,i)=>({ ad:k, renk:GV_RENKLER[i%GV_RENKLER.length], vals:aylikMap[k] }));
+    if(kalan.length){
+      const v = new Array(12).fill(0);
+      kalan.forEach(k => aylikMap[k].forEach((x,i)=>{ v[i]+=x; }));
+      seriler.push({ ad:'Diğer ('+kalan.length+')', renk:GV_DIGER, vals:v });
+    }
+    return seriler;
+  }
+  function gvUstYuvarla(x,y,w,h,r){
+    r = Math.min(r, w/2, h);
+    return `M${x},${y+h} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+w-r},${y} Q${x+w},${y} ${x+w},${y+r} L${x+w},${y+h} Z`;
+  }
+  function gvLejant(seriler){
+    if(seriler.length<2) return '';
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:2px 0 8px;font-size:12px;color:var(--muted);">${seriler.map(s=>`<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:2px;background:${s.renk};display:inline-block;"></span>${escapeHtml(s.ad)}</span>`).join('')}</div>`;
+  }
+  // Sütun grafiği (tek seri ya da yığılmış)
+  function gvSutunSvg(o){
+    const W=520, H=240, L=46, R=10, T=16, B=26;
+    const n = o.etiketler.length;
+    const toplamlar = o.etiketler.map((_,i)=>o.seriler.reduce((s,x)=>s+(x.vals[i]||0),0));
+    const max = Math.max(...toplamlar, 0);
+    if(!(max>0)) return `<div class="empty" style="padding:30px 10px;">Bu yıl için veri yok</div>`;
+    const { top, ticks } = gvNice(max);
+    const iw = W-L-R, ih = H-T-B, band = iw/n, bw = Math.min(band*0.62, 38);
+    const y = v => T + ih - (v/top)*ih;
+    const fmt = o.fmt || (v=>gvFmt(v,0));
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(o.baslik||'')}" style="display:block;max-width:100%;height:auto;">`;
+    ticks.forEach(t => {
+      s += `<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="#e6e5e1" stroke-width="1"/>`;
+      s += `<text x="${L-8}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="#6B7280">${fmt(t)}</text>`;
+    });
+    const enBuyuk = toplamlar.indexOf(max);
+    o.etiketler.forEach((et,i) => {
+      const x = L + band*i + (band-bw)/2;
+      let alt = 0;
+      o.seriler.forEach((sr,si) => {
+        const v = sr.vals[i]||0; if(!(v>0)) return;
+        const h = (v/top)*ih, yy = y(alt+v);
+        const ustMu = si===o.seriler.length-1 || o.seriler.slice(si+1).every(z=>!(z.vals[i]>0));
+        if(o.seriler.length===1 || ustMu) s += `<path d="${gvUstYuvarla(x,yy,bw,Math.max(h,1),4)}" fill="${sr.renk}" stroke="#fff" stroke-width="${o.seriler.length>1?1.5:0}"/>`;
+        else s += `<rect x="${x}" y="${yy}" width="${bw}" height="${Math.max(h,1)}" fill="${sr.renk}" stroke="#fff" stroke-width="1.5"/>`;
+        alt += v;
+      });
+      if(i===enBuyuk) s += `<text x="${x+bw/2}" y="${y(toplamlar[i])-6}" text-anchor="middle" font-size="11" font-weight="700" fill="#22262B">${fmt(toplamlar[i])}</text>`;
+      s += `<text x="${x+bw/2}" y="${H-8}" text-anchor="middle" font-size="11" fill="#6B7280">${escapeHtml(et)}</text>`;
+      const tip = [o.etiketlerUzun ? o.etiketlerUzun[i] : et].concat(
+        o.seriler.length>1 ? o.seriler.filter(sr=>sr.vals[i]>0).map(sr=>sr.ad+': '+fmt(sr.vals[i])+(o.birim?' '+o.birim:'')) : [],
+        [(o.seriler.length>1?'Toplam: ':'')+fmt(toplamlar[i])+(o.birim?' '+o.birim:'')]
+      ).join('|');
+      s += `<rect class="gv-hit" x="${L+band*i}" y="${T}" width="${band}" height="${ih+B-6}" fill="#000" fill-opacity="0" data-gvtip="${escapeHtml(tip)}"/>`;
+    });
+    s += `<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="#c9c7c0" stroke-width="1"/></svg>`;
+    return s;
+  }
+  // Çizgi grafiği (fire oranı gibi); null değerler boşluk bırakır
+  function gvCizgiSvg(o){
+    const W=520, H=240, L=46, R=14, T=16, B=26;
+    const n = o.etiketler.length;
+    const dolu = o.degerler.filter(v=>v!=null);
+    if(!dolu.length) return `<div class="empty" style="padding:30px 10px;">Bu yıl için veri yok</div>`;
+    const max = Math.max(...dolu, o.ort||0);
+    const { top, ticks } = gvNice(max*1.05);
+    const iw = W-L-R, ih = H-T-B, band = iw/n;
+    const x = i => L + band*i + band/2, y = v => T + ih - (v/top)*ih;
+    const fmt = o.fmt;
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(o.baslik||'')}" style="display:block;max-width:100%;height:auto;">`;
+    ticks.forEach(t => {
+      s += `<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="#e6e5e1" stroke-width="1"/>`;
+      s += `<text x="${L-8}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="#6B7280">${fmt(t)}</text>`;
+    });
+    if(o.ort!=null){
+      s += `<line x1="${L}" x2="${W-R}" y1="${y(o.ort)}" y2="${y(o.ort)}" stroke="#52514e" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+      s += `<text x="${W-R}" y="9" text-anchor="end" font-size="11" fill="#52514e">- - Yıl ortalaması ${fmt(o.ort)}</text>`;
+    }
+    let yol = '', acik = false;
+    o.degerler.forEach((v,i) => {
+      if(v==null){ acik = false; return; }
+      yol += (acik?' L':' M') + x(i) + ',' + y(v); acik = true;
+    });
+    s += `<path d="${yol}" fill="none" stroke="${o.renk}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    o.degerler.forEach((v,i) => {
+      if(v!=null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${o.renk}" stroke="#fff" stroke-width="2"/>`;
+      s += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#6B7280">${escapeHtml(o.etiketler[i])}</text>`;
+      const tip = [o.etiketlerUzun[i]].concat(v==null ? ['Üretim kaydı yok'] : [o.ad+': '+fmt(v)].concat(o.ek ? o.ek(i) : [])).join('|');
+      s += `<rect class="gv-hit" x="${L+band*i}" y="${T}" width="${band}" height="${ih+B-6}" fill="#000" fill-opacity="0" data-gvtip="${escapeHtml(tip)}"/>`;
+    });
+    s += `<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="#c9c7c0" stroke-width="1"/></svg>`;
+    return s;
+  }
+  // Yatay sıralama çubukları
+  function gvSiralama(ogeler, renk, birim){
+    if(!ogeler.length) return `<div class="empty" style="padding:30px 10px;">Bu yıl için veri yok</div>`;
+    const max = Math.max(...ogeler.map(x=>x.deger));
+    return `<div style="display:flex;flex-direction:column;gap:9px;">${ogeler.map(x => {
+      const tip = [x.ad, gvFmt(x.deger,2)+' '+birim+' (%'+gvFmt(x.pay,1)+')'].concat(x.ek?[x.ek]:[]).join('|');
+      return `<div class="gv-hit-row" data-gvtip="${escapeHtml(tip)}" style="display:grid;grid-template-columns:minmax(70px,130px) 1fr auto;gap:10px;align-items:center;font-size:12.5px;">
+        <span style="color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(x.ad)}">${escapeHtml(x.ad)}</span>
+        <span style="background:#f0efec;border-radius:4px;height:14px;overflow:hidden;"><span style="display:block;height:100%;width:${max>0?Math.max(2,x.deger/max*100):0}%;background:${x.renk||renk};border-radius:4px;"></span></span>
+        <span class="mono" style="color:var(--muted);white-space:nowrap;">${gvFmt(x.deger,1)} ${birim} · %${gvFmt(x.pay,0)}${x.ek?` · ${escapeHtml(x.ek)}`:''}</span>
+      </div>`; }).join('')}</div>`;
+  }
+  function gvTablo(etiketler, seriler, fmt, birim){
+    const toplam = seriler.map(s=>s.vals.reduce((a,b)=>a+b,0));
+    return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--muted);">Tablo olarak göster</summary>
+      <div style="overflow-x:auto;margin-top:8px;"><table>
+        <thead><tr><th>Ay</th>${seriler.map(s=>`<th>${escapeHtml(s.ad)}</th>`).join('')}${seriler.length>1?'<th>Toplam</th>':''}</tr></thead>
+        <tbody>${etiketler.map((et,i)=>`<tr><td>${escapeHtml(et)}</td>${seriler.map(s=>`<td class="mono">${fmt(s.vals[i])}</td>`).join('')}${seriler.length>1?`<td class="mono"><b>${fmt(seriler.reduce((a,s)=>a+s.vals[i],0))}</b></td>`:''}</tr>`).join('')}
+        <tr><td><b>Yıl</b></td>${toplam.map(t=>`<td class="mono"><b>${fmt(t)}</b></td>`).join('')}${seriler.length>1?`<td class="mono"><b>${fmt(toplam.reduce((a,b)=>a+b,0))}</b></td>`:''}</tr></tbody>
+      </table></div></details>`;
+  }
+  function gvKart(baslik, ipucu, govde){
+    return `<div class="card" style="padding:16px;margin-bottom:16px;">
+      <h3 style="font-size:14px;margin:0 0 2px;">${escapeHtml(baslik)}</h3>
+      ${ipucu?`<div class="hint" style="margin:0 0 10px;text-transform:none;letter-spacing:0;font-size:12px;">${escapeHtml(ipucu)}</div>`:''}
+      ${govde}
+    </div>`;
+  }
+  // Ortak sayfa: kaynak = { baslik, kayitlar, fire:boolean, boyutlar:[{baslik, fn, ek?:boolean}] }
+  function renderYillikGrafikler(kaynak){
+    const kayitlar = (kaynak.kayitlar||[]).filter(r=>r.tarih);
+    const yillar = [...new Set(kayitlar.map(r=>r.tarih.slice(0,4)))].sort();
+    let yil = state.ozetYil;
+    if(!yillar.includes(yil) && yillar.length) yil = yillar[yillar.length-1];
+    if(!yillar.includes(yil)) yillar.push(yil);
+    const yilKayit = kayitlar.filter(r=>r.tarih.slice(0,4)===yil);
+    const uzunAy = GV_AYLAR.map((a,i)=>a+' '+yil);
+    const m3 = r => r.m3||0;
+    const aylikM3 = gvAylikTopla(kayitlar, yil, m3);
+    const aylikAdet = gvAylikTopla(kayitlar, yil, r=>r.adet||0);
+    const toplamM3 = aylikM3.reduce((a,b)=>a+b,0), toplamAdet = aylikAdet.reduce((a,b)=>a+b,0);
+    const ustaMap = {}; yilKayit.forEach(r => { const k = r.usta || 'Belirtilmemiş'; ustaMap[k] = (ustaMap[k]||0) + m3(r); });
+    const enUsta = Object.entries(ustaMap).sort((a,b)=>b[1]-a[1])[0];
+    const mmMap = {}; yilKayit.forEach(r => { const k = r.kalinlik!=null ? gvFmt(r.kalinlik, r.kalinlik%1?1:0)+' mm' : '—'; mmMap[k] = (mmMap[k]||0) + m3(r); });
+    const enMm = Object.entries(mmMap).sort((a,b)=>b[1]-a[1])[0];
+    const fireM3 = yilKayit.reduce((s,r)=>s+(r.fire_m3||0),0);
+    const firePct = toplamM3 ? fireM3/toplamM3*100 : 0;
+    const aktifAylar = aylikM3.filter(v=>v>0).length;
+
+    const secici = `<div class="filters">
+      <select data-action="ozet-yil" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);">
+        ${yillar.map(y=>`<option value="${y}" ${y===yil?'selected':''}>${y}</option>`).join('')}
+      </select>
+      <span class="hint" style="align-self:center;">${yil} yılı · ${escapeHtml(kaynak.baslik)} · ${aktifAylar} ay üretim kaydı</span>
+    </div>`;
+    if(!yilKayit.length) return secici + `<div class="card"><div class="empty"><b>Veri yok</b>${yil} yılı için kayıt bulunamadı.</div></div>`;
+
+    const kpi = `<div class="summary">
+      <div class="stat"><div class="num">${gvFmt(toplamM3,1)}</div><div class="label">Yıllık Toplam m³</div></div>
+      <div class="stat"><div class="num">${gvFmt(toplamAdet,0)}</div><div class="label">Yıllık Toplam Adet</div></div>
+      <div class="stat"><div class="num">${gvFmt(aktifAylar?toplamM3/aktifAylar:0,1)}</div><div class="label">Ort. Aylık m³</div></div>
+      ${kaynak.fire ? `<div class="stat"><div class="num">%${gvFmt(firePct,2)}</div><div class="label">Yıllık Fire Oranı</div></div>` : ''}
+      <div class="stat"><div class="num" style="font-size:20px;">${enUsta?escapeHtml(enUsta[0]):'—'}</div><div class="label">En Çok Üreten Usta${enUsta?` (${gvFmt(enUsta[1],1)} m³)`:''}</div></div>
+      <div class="stat"><div class="num" style="font-size:20px;">${enMm?escapeHtml(enMm[0]):'—'}</div><div class="label">En Çok Üretilen Kalınlık${enMm?` (%${gvFmt(enMm[1]/toplamM3*100,0)})`:''}</div></div>
+    </div>`;
+
+    const parcalar = [];
+    // Yıllara göre toplam (birden çok yıl varsa)
+    if(yillar.length>1){
+      const yilVals = yillar.map(y => kayitlar.filter(r=>r.tarih.slice(0,4)===y).reduce((s,r)=>s+m3(r),0));
+      parcalar.push(`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">`+gvKart('Yıllara Göre Üretim (m³)', 'Her yılın toplam üretimi.',
+        gvSutunSvg({ etiketler:yillar, seriler:[{ad:'m³',renk:GV_RENKLER[0],vals:yilVals}], fmt:v=>gvFmt(v,0), birim:'m³', baslik:'Yıllara göre üretim' }))+`</div>`);
+    }
+    // 1) Aylık üretim
+    parcalar.push(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+      ${gvKart('Aylık Üretim (m³)', 'Ay ay üretilen toplam hacim. En yüksek ay işaretli.',
+        gvSutunSvg({ etiketler:GV_AYLAR, etiketlerUzun:uzunAy, seriler:[{ad:'m³',renk:GV_RENKLER[0],vals:aylikM3}], fmt:v=>gvFmt(v, v>=20||v===0?0:1), birim:'m³', baslik:'Aylık üretim m³' }) + gvTablo(GV_AYLAR,[{ad:'m³',vals:aylikM3}],v=>gvFmt(v,2)))}
+      ${gvKart('Aylık Üretim (adet)', 'Ay ay üretilen adet.',
+        gvSutunSvg({ etiketler:GV_AYLAR, etiketlerUzun:uzunAy, seriler:[{ad:'Adet',renk:GV_RENKLER[1],vals:aylikAdet}], fmt:v=>gvFmt(v,0), birim:'adet', baslik:'Aylık üretim adet' }) + gvTablo(GV_AYLAR,[{ad:'Adet',vals:aylikAdet}],v=>gvFmt(v,0)))}
+    </div>`);
+    // 2) Aylık fire oranı
+    if(kaynak.fire){
+      const aylikFire = gvAylikTopla(kayitlar, yil, r=>r.fire_m3||0);
+      const oranlar = aylikM3.map((v,i)=> v>0 ? aylikFire[i]/v*100 : null);
+      const pf = v => '%'+gvFmt(v,1);
+      parcalar.push(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">`+gvKart('Aylık Fire Oranı', 'Fire m³ / üretim m³. Kesikli çizgi yıl ortalaması.',
+        gvCizgiSvg({ etiketler:GV_AYLAR, etiketlerUzun:uzunAy, degerler:oranlar, ort:firePct, renk:GV_RENKLER[1], ad:'Fire oranı', fmt:pf, baslik:'Aylık fire oranı',
+          ek:i=>['Fire: '+gvFmt(aylikFire[i],3)+' m³','Üretim: '+gvFmt(aylikM3[i],2)+' m³'] })
+        + gvTablo(GV_AYLAR,[{ad:'Fire m³',vals:aylikFire},{ad:'Üretim m³',vals:aylikM3},{ad:'Fire %',vals:oranlar.map(v=>v==null?0:v)}],v=>gvFmt(v,2)))
+        + gvKart('Aylık Fire Miktarı (m³)', 'Ay ay çöpe giden hacim; yıl toplamı '+gvFmt(fireM3,1)+' m³.',
+          gvSutunSvg({ etiketler:GV_AYLAR, etiketlerUzun:uzunAy, seriler:[{ad:'Fire m³',renk:GV_RENKLER[3],vals:aylikFire}], fmt:v=>gvFmt(v, v>=20||v===0?0:1), birim:'m³', baslik:'Aylık fire m³' }))
+        + `</div>`);
+    }
+    // 3) Boyutlar (usta, kalınlık, ...)
+    kaynak.boyutlar.forEach(b => {
+      const map = gvAylikTopla(kayitlar, yil, m3, b.fn);
+      const seriler = gvSeriler(map, 6);
+      const toplamlar = {}; yilKayit.forEach(r => { const k = b.fn(r); toplamlar[k] = (toplamlar[k]||0) + m3(r); });
+      const fireK = {}; if(kaynak.fire) yilKayit.forEach(r => { const k = b.fn(r); fireK[k] = (fireK[k]||0) + (r.fire_m3||0); });
+      const renkOf = {}; seriler.forEach(s=>{ renkOf[s.ad]=s.renk; });
+      const sirali = Object.entries(toplamlar).sort((a,b2)=>b2[1]-a[1]);
+      const ilk10 = sirali.slice(0,10).map(([ad,deger]) => ({ ad, deger, pay: toplamM3?deger/toplamM3*100:0, renk: renkOf[ad]||GV_DIGER,
+        ek: (kaynak.fire && b.fire && deger>0) ? 'fire %'+gvFmt((fireK[ad]||0)/deger*100,1) : '' }));
+      parcalar.push(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+        ${gvKart(b.baslik+' Bazlı Aylık Üretim (m³)', 'Her ay hangi '+b.birimAdi+' ne kadar üretti. En çok üreten 6 '+b.birimAdi+' renkli, kalanı "Diğer".',
+          gvLejant(seriler) + gvSutunSvg({ etiketler:GV_AYLAR, etiketlerUzun:uzunAy, seriler, fmt:v=>gvFmt(v, v>=20||v===0?0:1), birim:'m³', baslik:b.baslik+' bazlı aylık üretim' }) + gvTablo(GV_AYLAR, seriler, v=>gvFmt(v,2)))}
+        ${gvKart(b.baslik+' Bazlı Yıllık Üretim', 'Yıl toplamı ve toplam içindeki pay'+((kaynak.fire&&b.fire)?'; fire oranı da yanında.':'.'),
+          gvSiralama(ilk10, GV_RENKLER[0], 'm³'))}
+      </div>`);
+    });
+    return secici + kpi + parcalar.join('');
+  }
+  function renderUretimGrafikSayfasi(){
+    return renderYillikGrafikler({
+      baslik:'Kontraplak üretimi', kayitlar: state.gunlukUretim, fire:true,
+      boyutlar:[
+        { baslik:'Usta', birimAdi:'usta', fn:r=>r.usta||'Belirtilmemiş', fire:true },
+        { baslik:'Kalınlık', birimAdi:'kalınlık', fn:r=>r.kalinlik!=null ? gvFmt(r.kalinlik, r.kalinlik%1?1:0)+' mm' : '—', fire:true }
+      ]});
+  }
+  function renderMobilyaGrafikSayfasi(){
+    return renderYillikGrafikler({
+      baslik:'Mobilya pres', kayitlar: state.presUretim, fire:false,
+      boyutlar:[
+        { baslik:'Usta', birimAdi:'usta', fn:r=>r.usta||'Belirtilmemiş' },
+        { baslik:'Kalınlık', birimAdi:'kalınlık', fn:r=>r.kalinlik!=null ? gvFmt(r.kalinlik, r.kalinlik%1?1:0)+' mm' : '—' },
+        { baslik:'Kalıp', birimAdi:'kalıp', fn:r=>r.makine||'Belirtilmemiş' }
+      ]});
+  }
+  // Grafik ipucu (tooltip): tek bir dinleyici, #app dışında kalan bir kutu kullanır
+  (function(){
+    let kutu = null;
+    document.addEventListener('mousemove', function(e){
+      const el = e.target && e.target.closest ? e.target.closest('[data-gvtip]') : null;
+      if(!el){ if(kutu) kutu.style.display = 'none'; return; }
+      if(!kutu){ kutu = document.createElement('div'); kutu.className = 'gv-tip'; document.body.appendChild(kutu); }
+      const p = el.getAttribute('data-gvtip').split('|');
+      kutu.innerHTML = '<b>'+escapeHtml(p[0])+'</b>' + p.slice(1).map(x=>'<div>'+escapeHtml(x)+'</div>').join('');
+      kutu.style.display = 'block';
+      const w = kutu.offsetWidth, h = kutu.offsetHeight;
+      let x = e.clientX + 14, y = e.clientY + 14;
+      if(x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+      if(y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+      kutu.style.left = Math.max(4,x)+'px'; kutu.style.top = Math.max(4,y)+'px';
+    });
+  })();
+
+
   function renderUretimTakipTab(rol){
     const istenenView = state.uretimTakipView || 'gunluk';
     const gorunumler = URETIM_TAKIP_ALT_GORUNUMLER.filter(v => !v.adminOnly || rol==='admin');
@@ -1447,6 +1728,7 @@
     if(view==='gunluk') icerik = renderGunlukKayitlar(kayitlar, rol);
     else if(view==='ozet') icerik = renderOzetView();
     else if(view==='yillik') icerik = renderYillikOzet(state.ozetYil, hesaplaYillikOzet(state.ozetYil));
+    else if(view==='grafik') icerik = renderUretimGrafikSayfasi();
     else if(view==='tutkal') icerik = renderTutkalTab(rol);
     else if(view==='kapasite') icerik = renderKapasiteRaporuView(rol);
     else if(view==='torna') icerik = renderSoymaCiktisiTab(rol);
@@ -4149,7 +4431,7 @@
       }
       if(state.activeTab==='kalan_tutkal' && !state.tutkalLoaded){ loadTutkal(true); }
       if(state.activeTab==='envanter' && !state.envanterLoaded){ loadEnvanter(true); }
-      if(['mob_giyotin','mob_dis_papel','mob_pres','mob_cnc','mob_zimpara_fitil','mob_kapasite','mob_cizimler'].includes(state.activeTab)){
+      if(['mob_giyotin','mob_dis_papel','mob_pres','mob_grafik','mob_cnc','mob_zimpara_fitil','mob_kapasite','mob_cizimler'].includes(state.activeTab)){
         if(!state.giyotinLoaded) loadGiyotin(true);
         if(!state.disPapelLoaded) loadDisPapel(true);
         if(!state.presLoaded) loadPres(true);
