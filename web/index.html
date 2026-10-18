@@ -148,6 +148,28 @@
   .loading{padding:60px;text-align:center;color:var(--muted);}
   .asama-node:hover rect{opacity:.85;}
 
+  /* ================= ADMIN GÖRÜNÜM PANELİ ================= */
+  .gorunum-sec{position:relative;}
+  .gorunum-sec summary{list-style:none;cursor:pointer;user-select:none;}
+  .gorunum-sec summary::-webkit-details-marker{display:none;}
+  .gorunum-sec summary:hover,.gorunum-sec[open] summary{border-color:var(--amber);}
+  .gorunum-sec .gs-ok{color:#9aa0a6;font-size:11px;margin-left:2px;}
+  .role-badge.onizleme{background:var(--amber);border-color:var(--amber-dark);color:#1c1f22;font-weight:600;}
+  .role-badge.onizleme .dot{background:#1c1f22;}
+  .role-badge.onizleme .gs-ok{color:#1c1f22;}
+  .gorunum-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;min-width:250px;background:var(--shell-2);border:1px solid #3a3f45;
+    border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.45);padding:6px;}
+  .gm-baslik{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a6;padding:8px 12px 4px;font-weight:600;}
+  .gm-sec{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:#e4e6e8;font-size:14px;padding:10px 12px;border-radius:8px;}
+  .gm-sec::before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid #6b7178;flex:0 0 auto;}
+  .gm-sec:hover{background:#363b41;}
+  .gm-sec.aktif{color:#fff;font-weight:600;}
+  .gm-sec.aktif::before{background:var(--amber);border-color:var(--amber);}
+  .hm-ayrac{height:1px;background:#3a3f45;margin:6px 0;}
+  .gorunum-bant{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;background:#FBEBD3;color:#6B4512;
+    border-bottom:1px solid #E9C894;padding:9px 16px;font-size:13px;text-align:center;}
+  .gorunum-bant button{background:var(--ink);color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:12.5px;font-weight:600;}
+
   /* ================= TELEFON GÖRÜNÜMÜ ================= */
   .hdr-mob,.hdr-baslik{display:none;}
   @keyframes mSheetUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
@@ -165,7 +187,13 @@
     .hdr-baslik b{font-family:'Space Grotesk',system-ui,sans-serif;font-size:17px;color:#fff;}
     .hdr-baslik span{font-size:11.5px;color:#9aa0a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .role-chip{display:contents;}
-    .role-chip>.role-badge,.role-chip>.switch-btn{display:none;}
+    .role-chip>.role-badge,.role-chip>.switch-btn,.role-chip>.gorunum-sec{display:none;}
+    .gorunum-bant{position:sticky;top:46px;z-index:25;font-size:12.5px;padding:8px 12px;gap:8px;}
+    .hdr-menu{max-height:calc(100vh - 120px);overflow-y:auto;}
+    .hdr-menu .gm-sec{display:flex;font-size:15px;padding:11px 12px;}
+    .gorunum-bant .gb-detay{display:none;}
+    .gorunum-bant{flex-wrap:nowrap;justify-content:space-between;text-align:left;}
+    .gorunum-bant button{flex:0 0 auto;}
     .modul-switch{grid-column:1/-1;grid-row:2;overflow-x:auto;scrollbar-width:none;border-radius:12px;padding:3px;}
     .modul-switch::-webkit-scrollbar{display:none;}
     .modul-btn{flex:1 0 auto;text-align:center;padding:9px 12px;border-radius:9px;font-size:13.5px;}
@@ -943,7 +971,15 @@
   }
 
   const MODUL_ADLARI = { satis:'Satış', uretim:'Üretim', tedarik:'Satın Alma', mobilya:'Mobilya' };
-  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron', satin_alma:'Satın Alma' };
+  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron', satin_alma:'Satın Alma', mobilya_vardiya_amiri:'Mobilya Vardiya Amiri' };
+  // Admin'in "Görünüm" panelinde seçebileceği roller
+  const GORUNUM_ROLLERI = ['admin','satis','vardiya_amiri','mobilya_vardiya_amiri','satin_alma','patron'];
+  function gorunumSecenekleriHtml(){
+    const secili = state.gorunumRol || 'admin';
+    return GORUNUM_ROLLERI.filter(r => moduller(r).length>0).map(r =>
+      `<button class="gm-sec ${secili===r?'aktif':''}" data-action="gorunum" data-rol="${r==='admin'?'':r}">${escapeHtml(ROL_ADLARI[r]||r)}${r==='admin'?' (kendi ekranım)':''}</button>`
+    ).join('');
+  }
   const MODUL_SEKMELERI = {
     satis: [ {key:'giris', label:'Sipariş Giriş', roller:['satis','admin']}, {key:'takip', label:'Sipariş Takip', roller:['satis','admin','patron']} ],
     uretim: [
@@ -1022,7 +1058,10 @@
   function render(){
     if(!state.user){ renderGate(); return; }
     const odak = odakBilgisiAl();
-    const rol = state.profile ? state.profile.rol : null;
+    const gercekRol = state.profile ? state.profile.rol : null;
+    // Admin, başka bir rolün ekranını o rolün yetkileriyle görebilir (Görünüm paneli)
+    if(gercekRol!=='admin') state.gorunumRol = null;
+    const rol = state.gorunumRol || gercekRol;
     const mods = moduller(rol);
     if(!mods.includes(state.modul)) state.modul = mods[0];
     const sekmeler = (MODUL_SEKMELERI[state.modul]||[]).filter(s => s.roller.includes(rol));
@@ -1044,15 +1083,24 @@
           <div class="modul-switch">
             ${mods.map(m=>`<div class="modul-btn ${state.modul===m?'active':''}" data-action="modul" data-modul="${m}">${MODUL_ADLARI[m]||m}</div>`).join('')}
           </div>` : ''}
-          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>
-          ${rol==='admin' ? `<button class="switch-btn" data-action="kullanicilar">Kullanıcılar</button>` : ''}
+          ${gercekRol==='admin' ? `
+          <details class="gorunum-sec">
+            <summary class="role-badge ${rol}${state.gorunumRol?' onizleme':''}" title="Başka bir rolün ekranını görüntüle"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${state.gorunumRol ? escapeHtml(ROL_ADLARI[rol]||rol)+' görünümü' : 'Admin'} <span class="gs-ok">▾</span></summary>
+            <div class="gorunum-menu">
+              <div class="gm-baslik">Görünüm</div>
+              ${gorunumSecenekleriHtml()}
+            </div>
+          </details>` : `
+          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>`}
+          ${gercekRol==='admin' ? `<button class="switch-btn" data-action="kullanicilar">Kullanıcılar</button>` : ''}
           <button class="switch-btn" data-action="sifre-degistir">Şifremi Değiştir</button>
           <button class="switch-btn" data-action="logout">Çıkış Yap</button>
           <details class="hdr-mob">
             <summary aria-label="Hesap menüsü">${escapeHtml(basHarfler(state.profile?state.profile.ad_soyad:''))}</summary>
             <div class="hdr-menu">
-              <div class="hm-kim"><b>${escapeHtml(state.profile?state.profile.ad_soyad:'')}</b><span>${escapeHtml(ROL_ADLARI[rol]||rol||'')}</span></div>
-              ${rol==='admin' ? `<button data-action="kullanicilar">Kullanıcılar</button>` : ''}
+              <div class="hm-kim"><b>${escapeHtml(state.profile?state.profile.ad_soyad:'')}</b><span>${escapeHtml(ROL_ADLARI[gercekRol]||gercekRol||'')}${state.gorunumRol ? ' · '+escapeHtml(ROL_ADLARI[rol]||rol)+' görünümünde' : ''}</span></div>
+              ${gercekRol==='admin' ? `<div class="gm-baslik">Görünüm</div>${gorunumSecenekleriHtml()}<div class="hm-ayrac"></div>` : ''}
+              ${gercekRol==='admin' ? `<button data-action="kullanicilar">Kullanıcılar</button>` : ''}
               <button data-action="sifre-degistir">Şifremi Değiştir</button>
               <button class="hm-cikis" data-action="logout">Çıkış Yap</button>
             </div>
@@ -1062,6 +1110,11 @@
       <div class="tabs">
         ${sekmeler.map(s=>`<div class="tab ${state.activeTab===s.key?'active':''}" data-action="tab" data-tab="${s.key}">${s.label}</div>`).join('')}
       </div>
+      ${state.gorunumRol ? `
+      <div class="gorunum-bant">
+        <span><b>${escapeHtml(ROL_ADLARI[rol]||rol)}</b> görünümündesin<span class="gb-detay">. Ekranlar ve yetkiler bu role göre; yaptığın kayıtlar senin adınla girilir.</span></span>
+        <button data-action="gorunum" data-rol="">Admin'e dön</button>
+      </div>` : ''}
       <main>
         ${state.toast ? `<div class="msg ${state.toast.type==='ok'?'ok':'err'}">${escapeHtml(state.toast.text)}</div>` : ''}
         ${state.loading ? `<div class="loading">Yükleniyor…</div>` : renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list)}
@@ -1136,7 +1189,7 @@
     }
   }
   document.addEventListener('click', function(e){
-    document.querySelectorAll('details.hdr-mob[open]').forEach(d=>{ if(!d.contains(e.target)) d.removeAttribute('open'); });
+    document.querySelectorAll('details.hdr-mob[open], details.gorunum-sec[open]').forEach(d=>{ if(!d.contains(e.target)) d.removeAttribute('open'); });
   });
 
   function renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list){
@@ -4571,17 +4624,8 @@
     `;
   }
 
-  // ---------- Events ----------
-  app.addEventListener('click', function(e){
-    const t = e.target.closest('[data-action]');
-    if(!t){ if(e.target.classList.contains('overlay')){ state.modal=null; render(); } return; }
-    const action = t.dataset.action;
-    if(action==='logout'){ doLogout(); }
-    else if(action==='sifre-degistir'){ state.modal = { type:'sifre-degistir' }; render(); }
-    else if(action==='kullanicilar'){ loadTumKullanicilar().then(render); state.modal = { type:'kullanicilar' }; render(); }
-    else if(action==='sifre-ata-ac'){ state.modal = { type:'sifre-ata', hedefId: t.dataset.id, hedefAd: t.dataset.ad }; render(); }
-    else if(action==='modul'){
-      state.modul = t.dataset.modul; state.activeTab = defaultTab(state.modul); state.toast=null;
+  function modulSec(m){
+      state.modul = m; state.activeTab = defaultTab(state.modul); state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
       if(state.activeTab==='uretim_takip'){
         if(!state.tutkalLoaded) loadTutkal(true);
@@ -4606,6 +4650,25 @@
         if(!state.cizimlerLoaded) loadCizimler(true);
       }
       render();
+  }
+
+  // ---------- Events ----------
+  app.addEventListener('click', function(e){
+    const t = e.target.closest('[data-action]');
+    if(!t){ if(e.target.classList.contains('overlay')){ state.modal=null; render(); } return; }
+    const action = t.dataset.action;
+    if(action==='logout'){ doLogout(); }
+    else if(action==='sifre-degistir'){ state.modal = { type:'sifre-degistir' }; render(); }
+    else if(action==='kullanicilar'){ loadTumKullanicilar().then(render); state.modal = { type:'kullanicilar' }; render(); }
+    else if(action==='sifre-ata-ac'){ state.modal = { type:'sifre-ata', hedefId: t.dataset.id, hedefAd: t.dataset.ad }; render(); }
+    else if(action==='modul'){ modulSec(t.dataset.modul); }
+    else if(action==='gorunum'){
+      state.gorunumRol = t.dataset.rol || null; state.modal = null; state.toast = null;
+      const r = state.gorunumRol || (state.profile ? state.profile.rol : null);
+      const mods = moduller(r);
+      const hedef = (mods.includes('uretim') && (r==='admin'||r==='patron'||r==='vardiya_amiri')) ? 'uretim' : mods[0];
+      if(hedef) modulSec(hedef); else render();
+      window.scrollTo(0,0);
     }
     else if(action==='refresh'){ loadOrders(); }
     else if(action==='tab'){

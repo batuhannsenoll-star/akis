@@ -140,16 +140,154 @@
   .loading{padding:60px;text-align:center;color:var(--muted);}
   .asama-node:hover rect{opacity:.85;}
 
+  /* ================= ADMIN GÖRÜNÜM PANELİ ================= */
+  .gorunum-sec{position:relative;}
+  .gorunum-sec summary{list-style:none;cursor:pointer;user-select:none;}
+  .gorunum-sec summary::-webkit-details-marker{display:none;}
+  .gorunum-sec summary:hover,.gorunum-sec[open] summary{border-color:var(--amber);}
+  .gorunum-sec .gs-ok{color:#9aa0a6;font-size:11px;margin-left:2px;}
+  .role-badge.onizleme{background:var(--amber);border-color:var(--amber-dark);color:#1c1f22;font-weight:600;}
+  .role-badge.onizleme .dot{background:#1c1f22;}
+  .role-badge.onizleme .gs-ok{color:#1c1f22;}
+  .gorunum-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;min-width:250px;background:var(--shell-2);border:1px solid #3a3f45;
+    border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.45);padding:6px;}
+  .gm-baslik{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a6;padding:8px 12px 4px;font-weight:600;}
+  .gm-sec{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:#e4e6e8;font-size:14px;padding:10px 12px;border-radius:8px;}
+  .gm-sec::before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid #6b7178;flex:0 0 auto;}
+  .gm-sec:hover{background:#363b41;}
+  .gm-sec.aktif{color:#fff;font-weight:600;}
+  .gm-sec.aktif::before{background:var(--amber);border-color:var(--amber);}
+  .hm-ayrac{height:1px;background:#3a3f45;margin:6px 0;}
+  .gorunum-bant{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;background:#FBEBD3;color:#6B4512;
+    border-bottom:1px solid #E9C894;padding:9px 16px;font-size:13px;text-align:center;}
+  .gorunum-bant button{background:var(--ink);color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:12.5px;font-weight:600;}
+
+  /* ================= TELEFON GÖRÜNÜMÜ ================= */
+  .hdr-mob,.hdr-baslik{display:none;}
+  @keyframes mSheetUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
   @media (max-width:680px){
-    header{padding:12px 14px;}
-    .brand h1{font-size:17px;}
-    .tabs{padding:0 14px;}
-    main{padding:12px;}
-    .form-grid{grid-template-columns:1fr;}
-    .form-card{padding:16px;}
+    html{-webkit-text-size-adjust:100%;}
+    body{-webkit-tap-highlight-color:transparent;}
+    #app{overflow-x:clip;}
+
+    /* --- Üst bar --- */
+    header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px 10px;
+      padding:calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));}
+    .brand{grid-column:1;grid-row:1;}
+    .brand-logo{width:34px;height:34px;}
+    .hdr-baslik{display:flex;flex-direction:column;grid-column:2;grid-row:1;min-width:0;line-height:1.15;}
+    .hdr-baslik b{font-family:'Space Grotesk',system-ui,sans-serif;font-size:17px;color:#fff;}
+    .hdr-baslik span{font-size:11.5px;color:#9aa0a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .role-chip{display:contents;}
+    .role-chip>.role-badge,.role-chip>.switch-btn,.role-chip>.gorunum-sec{display:none;}
+    .gorunum-bant{position:sticky;top:46px;z-index:25;font-size:12.5px;padding:8px 12px;gap:8px;}
+    .hdr-menu{max-height:calc(100vh - 120px);overflow-y:auto;}
+    .hdr-menu .gm-sec{display:flex;font-size:15px;padding:11px 12px;}
+    .gorunum-bant .gb-detay{display:none;}
+    .gorunum-bant{flex-wrap:nowrap;justify-content:space-between;text-align:left;}
+    .gorunum-bant button{flex:0 0 auto;}
+    .modul-switch{grid-column:1/-1;grid-row:2;overflow-x:auto;scrollbar-width:none;border-radius:12px;padding:3px;}
+    .modul-switch::-webkit-scrollbar{display:none;}
+    .modul-btn{flex:1 0 auto;text-align:center;padding:9px 12px;border-radius:9px;font-size:13.5px;}
+
+    /* Hesap menüsü */
+    .hdr-mob{display:block;grid-column:3;grid-row:1;position:relative;}
+    .hdr-mob summary{list-style:none;width:38px;height:38px;border-radius:50%;background:var(--shell-2);border:1px solid #3a3f45;
+      color:var(--wood-3);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+    .hdr-mob summary::-webkit-details-marker{display:none;}
+    .hdr-mob[open] summary{border-color:var(--amber);}
+    .hdr-menu{position:absolute;right:0;top:46px;z-index:60;width:240px;background:var(--shell-2);border:1px solid #3a3f45;border-radius:14px;
+      box-shadow:0 14px 40px rgba(0,0,0,.45);padding:6px;animation:mSheetUp .16s ease-out;}
+    .hdr-menu .hm-kim{padding:10px 12px 12px;border-bottom:1px solid #3a3f45;margin-bottom:4px;}
+    .hdr-menu .hm-kim b{display:block;color:#fff;font-size:14.5px;}
+    .hdr-menu .hm-kim span{font-size:12px;color:#9aa0a6;}
+    .hdr-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:#e4e6e8;font-size:15px;padding:12px;border-radius:9px;}
+    .hdr-menu button:active{background:#363b41;}
+    .hdr-menu button.hm-cikis{color:#e08b74;}
+
+    /* --- Sekmeler: yapışkan, yatay kaydırmalı --- */
+    .tabs{position:sticky;top:0;z-index:30;padding:0 calc(6px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left));gap:0;
+      scrollbar-width:none;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+    .tabs::-webkit-scrollbar{display:none;}
+    .tab{padding:13px 12px;font-size:14px;border-bottom-width:3px;}
+
+    /* --- İçerik --- */
+    main{padding:12px calc(12px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));}
+    .app-footer{padding:6px 0 calc(18px + env(safe-area-inset-bottom));font-size:10px;}
+    h3{font-size:15px;}
+
+    .summary{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+    .stat{padding:12px;}
+    .summary>.stat:last-child:nth-child(odd){grid-column:1/-1;}
+    .stat .num{font-size:21px;}
+    .stat .label{font-size:10.5px;}
+
+    .filters{gap:6px;margin-bottom:12px;}
+    .chip{padding:8px 13px;font-size:13.5px;white-space:nowrap;flex:0 0 auto;}
+    .chip-serit{position:relative;display:flex;gap:6px;flex:1 0 100%;overflow-x:auto;scrollbar-width:none;
+      margin:0 calc(-12px - env(safe-area-inset-right)) 2px calc(-12px - env(safe-area-inset-left));padding:2px 12px;
+      -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 24px),transparent);}
+    .chip-serit::-webkit-scrollbar{display:none;}
+    .search{min-width:0;width:100%;margin-left:0;order:-1;padding:11px 12px;}
+
+    .card{border-radius:12px;}
+    .form-card{padding:16px;max-width:none;border-radius:12px;}
+    .form-grid{grid-template-columns:1fr;gap:12px;}
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="minmax(320px"],[style*="minmax(200px"]{grid-template-columns:1fr !important;}
+
+    /* Dokunmaya uygun alanlar; iOS'ta otomatik yakınlaştırmayı önlemek için 16px */
+    input,select,textarea{font-size:16px !important;}
+    input[type="date"],input[type="month"],input[type="week"]{min-height:42px;}
+    .field input,.field select,.field textarea{padding:11px 12px;min-height:44px;border-radius:9px;}
+    .field label{font-size:11.5px;}
+    .form-actions{flex-wrap:wrap;}
+    .form-actions .btn{flex:1 1 140px;}
+    .btn{padding:12px 16px;min-height:44px;border-radius:10px;}
+    .row-btn{padding:9px 13px;font-size:13px;border-radius:8px;min-height:38px;}
+    .row-btn.ghost{min-height:0;}
+    .auth-card{width:100%;max-width:360px;}
+    .auth-field input{padding:12px;}
+    .auth-submit{padding:13px;font-size:15px;}
+
+    /* --- Pencereler: alttan açılan sayfa --- */
+    .overlay{align-items:flex-end;padding:0;}
+    .modal{max-width:none !important;width:100% !important;max-height:92vh;border-radius:18px 18px 0 0;animation:mSheetUp .2s ease-out;
+      padding-bottom:env(safe-area-inset-bottom);}
+    .modal-head{position:sticky;top:0;background:#fff;z-index:2;padding:14px 16px;}
+    .modal-head::before{content:"";position:absolute;left:50%;top:6px;width:38px;height:4px;margin-left:-19px;border-radius:2px;background:#d6d3cb;}
     .modal-body{padding:16px;}
-    .search{min-width:0;width:100%;margin-left:0;}
-    .summary{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
+    .modal-foot{position:sticky;bottom:0;background:#fff;padding:12px 16px;}
+    .close-x{font-size:26px;padding:4px 8px;margin:-4px -8px -4px 0;}
+
+    /* --- Tablolar → kart görünümü (JS mcard sınıfını ekler) --- */
+    table.mcard{display:block;overflow:visible;font-size:14px;}
+    table.mcard thead{display:block;}
+    table.mcard thead tr{display:none;}
+    table.mcard thead tr.mc-keep{display:block;}
+    table.mcard thead tr.mc-keep th{display:block;}
+    table.mcard tbody{display:block;}
+    table.mcard tbody tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 12px;padding:12px 14px;border-bottom:1px solid var(--line);}
+    table.mcard tbody tr.mc-tek{display:block;padding:0;}
+    table.mcard tbody tr.mc-tek>td{display:block;padding:10px 14px;}
+    table.mcard td.mc-uzun{grid-column:1/-1;}
+    table.mcard td:has(> select){grid-column:span 2;}
+    /* Vardiya başlık satırı gibi tek hücreli satırlarda masaüstü hizalamalarını telefona uyarla */
+    table.mcard td.mc-full [style*="float:right"]{float:none !important;display:block;margin-top:4px;}
+    table.mcard td.mc-full [style*="margin-left:18px"]{margin-left:8px !important;}
+    table.mcard td.mc-full [style*="margin-left:32px"]{margin-left:0 !important;}
+    .modal .form-card{border:none;box-shadow:none;padding:0;}
+    table.mcard tbody tr:last-child{border-bottom:none;}
+    table.mcard tbody tr:hover{background:inherit;}
+    table.mcard tbody td{display:block;padding:0;border:none;min-width:0;overflow-wrap:anywhere;}
+    table.mcard td[data-label]::before{content:attr(data-label);display:block;font-size:10.5px;font-weight:600;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;font-family:'Inter',system-ui,sans-serif;}
+    table.mcard td.mc-baslik{grid-column:1/-1;font-weight:700;font-size:15.5px;}
+    table.mcard td.mc-baslik::before{display:inline !important;margin-right:6px;}
+    table.mcard td.mc-full{grid-column:1/-1;}
+    table.mcard td.mc-bos{display:none;}
+    table.mcard td.mc-act{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center;padding-top:2px;}
+    table.mcard td select{width:100%;min-height:40px;font-size:16px !important;}
   }
   .gv-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:#22262B;color:#fff;font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:260px;}
   .gv-tip b{display:block;margin-bottom:2px;}
@@ -825,7 +963,15 @@
   }
 
   const MODUL_ADLARI = { satis:'Satış', uretim:'Üretim', tedarik:'Satın Alma', mobilya:'Mobilya' };
-  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron', satin_alma:'Satın Alma' };
+  const ROL_ADLARI = { satis:'Satış', vardiya_amiri:'Vardiya Amiri', admin:'Admin', patron:'Patron', satin_alma:'Satın Alma', mobilya_vardiya_amiri:'Mobilya Vardiya Amiri' };
+  // Admin'in "Görünüm" panelinde seçebileceği roller
+  const GORUNUM_ROLLERI = ['admin','satis','vardiya_amiri','mobilya_vardiya_amiri','satin_alma','patron'];
+  function gorunumSecenekleriHtml(){
+    const secili = state.gorunumRol || 'admin';
+    return GORUNUM_ROLLERI.filter(r => moduller(r).length>0).map(r =>
+      `<button class="gm-sec ${secili===r?'aktif':''}" data-action="gorunum" data-rol="${r==='admin'?'':r}">${escapeHtml(ROL_ADLARI[r]||r)}${r==='admin'?' (kendi ekranım)':''}</button>`
+    ).join('');
+  }
   const MODUL_SEKMELERI = {
     satis: [ {key:'giris', label:'Sipariş Giriş', roller:['satis','admin']}, {key:'takip', label:'Sipariş Takip', roller:['satis','admin','patron']} ],
     uretim: [
@@ -908,7 +1054,10 @@
       state.__windowResized = true;
       window.electronAPI.resizeToMain();
     }
-    const rol = state.profile ? state.profile.rol : null;
+    const gercekRol = state.profile ? state.profile.rol : null;
+    // Admin, başka bir rolün ekranını o rolün yetkileriyle görebilir (Görünüm paneli)
+    if(gercekRol!=='admin') state.gorunumRol = null;
+    const rol = state.gorunumRol || gercekRol;
     const mods = moduller(rol);
     if(!mods.includes(state.modul)) state.modul = mods[0];
     const sekmeler = (MODUL_SEKMELERI[state.modul]||[]).filter(s => s.roller.includes(rol));
@@ -924,20 +1073,44 @@
       <div class="veneer"></div>
       <header>
         <div class="brand"><img src="${FIRMA_LOGO}" alt="${escapeHtml(FIRMA_ADI)}" class="brand-logo"></div>
+        <div class="hdr-baslik"><b>Akış</b><span>${escapeHtml((sekmeler.find(s=>s.key===state.activeTab)||{}).label || FIRMA_ADI)}</span></div>
         <div class="role-chip">
           ${mods.length>1 ? `
           <div class="modul-switch">
             ${mods.map(m=>`<div class="modul-btn ${state.modul===m?'active':''}" data-action="modul" data-modul="${m}">${MODUL_ADLARI[m]||m}</div>`).join('')}
           </div>` : ''}
-          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>
-          ${rol==='admin' ? `<button class="switch-btn" data-action="kullanicilar">Kullanıcılar</button>` : ''}
+          ${gercekRol==='admin' ? `
+          <details class="gorunum-sec">
+            <summary class="role-badge ${rol}${state.gorunumRol?' onizleme':''}" title="Başka bir rolün ekranını görüntüle"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${state.gorunumRol ? escapeHtml(ROL_ADLARI[rol]||rol)+' görünümü' : 'Admin'} <span class="gs-ok">▾</span></summary>
+            <div class="gorunum-menu">
+              <div class="gm-baslik">Görünüm</div>
+              ${gorunumSecenekleriHtml()}
+            </div>
+          </details>` : `
+          <div class="role-badge ${rol}"><span class="dot"></span>${escapeHtml(state.profile?state.profile.ad_soyad:'')} · ${ROL_ADLARI[rol]||rol}</div>`}
+          ${gercekRol==='admin' ? `<button class="switch-btn" data-action="kullanicilar">Kullanıcılar</button>` : ''}
           <button class="switch-btn" data-action="sifre-degistir">Şifremi Değiştir</button>
           <button class="switch-btn" data-action="logout">Çıkış Yap</button>
+          <details class="hdr-mob">
+            <summary aria-label="Hesap menüsü">${escapeHtml(basHarfler(state.profile?state.profile.ad_soyad:''))}</summary>
+            <div class="hdr-menu">
+              <div class="hm-kim"><b>${escapeHtml(state.profile?state.profile.ad_soyad:'')}</b><span>${escapeHtml(ROL_ADLARI[gercekRol]||gercekRol||'')}${state.gorunumRol ? ' · '+escapeHtml(ROL_ADLARI[rol]||rol)+' görünümünde' : ''}</span></div>
+              ${gercekRol==='admin' ? `<div class="gm-baslik">Görünüm</div>${gorunumSecenekleriHtml()}<div class="hm-ayrac"></div>` : ''}
+              ${gercekRol==='admin' ? `<button data-action="kullanicilar">Kullanıcılar</button>` : ''}
+              <button data-action="sifre-degistir">Şifremi Değiştir</button>
+              <button class="hm-cikis" data-action="logout">Çıkış Yap</button>
+            </div>
+          </details>
         </div>
       </header>
       <div class="tabs">
         ${sekmeler.map(s=>`<div class="tab ${state.activeTab===s.key?'active':''}" data-action="tab" data-tab="${s.key}">${s.label}</div>`).join('')}
       </div>
+      ${state.gorunumRol ? `
+      <div class="gorunum-bant">
+        <span><b>${escapeHtml(ROL_ADLARI[rol]||rol)}</b> görünümündesin<span class="gb-detay">. Ekranlar ve yetkiler bu role göre; yaptığın kayıtlar senin adınla girilir.</span></span>
+        <button data-action="gorunum" data-rol="">Admin'e dön</button>
+      </div>` : ''}
       <main>
         ${state.toast ? `<div class="msg ${state.toast.type==='ok'?'ok':'err'}">${escapeHtml(state.toast.text)}</div>` : ''}
         ${state.loading ? `<div class="loading">Yükleniyor…</div>` : renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list)}
@@ -945,8 +1118,75 @@
       <div class="app-footer">${escapeHtml(FIRMA_ADI)} için geliştirildi</div>
       ${state.modal ? renderModal(rol) : ''}
     `;
+    mobilDuzenle();
     odakGeriYukle(odak);
   }
+
+  // ---------- Telefon görünümü yardımcıları ----------
+  function basHarfler(ad){
+    const p = String(ad||'').trim().split(/\s+/).filter(Boolean);
+    if(!p.length) return '?';
+    return ((p[0][0]||'') + (p.length>1 ? p[p.length-1][0] : '')).toLocaleUpperCase('tr-TR');
+  }
+  // Tabloları telefonda kart olarak gösterebilmek için hücrelere başlık etiketi ekler.
+  // Görünüm sadece dar ekranda (CSS @media) devreye girer; masaüstü etkilenmez.
+  function tablolariKartlastir(kok){
+    kok.querySelectorAll('table:not(.mc-hazir)').forEach(tb=>{
+      tb.classList.add('mc-hazir');
+      if(tb.querySelector('[rowspan]')) return;            // matris tablolar yatay kaydırmalı kalsın
+      const thead = tb.tHead; if(!thead || !thead.rows.length) return;
+      const satirlar = Array.from(thead.rows);
+      const son = satirlar[satirlar.length-1];
+      const etiketler = [];
+      Array.from(son.cells).forEach(c=>{ const n=c.colSpan||1; for(let i=0;i<n;i++) etiketler.push(n>1 ? '' : c.textContent.trim()); });
+      const kolon = etiketler.length;
+      if(kolon < 5) return;                                 // dar tablolar zaten ekrana sığıyor
+      const ustler = satirlar.slice(0,-1);
+      if(ustler.some(r=>!(r.cells.length===1 && r.cells[0].colSpan>=kolon))) return; // gruplu başlık → dokunma
+      ustler.forEach(r=>r.classList.add('mc-keep'));
+      tb.classList.add('mcard');
+      Array.from(tb.tBodies).forEach(b=>Array.from(b.rows).forEach(tr=>{
+        let idx = 0, baslikVerildi = false;
+        Array.from(tr.cells).forEach(td=>{
+          const n = td.colSpan||1; const et = etiketler[idx]||''; idx += n;
+          const icerikVar = td.textContent.trim() || td.querySelector('button,select,input,a,img,svg');
+          if(!icerikVar){ td.classList.add('mc-bos'); return; }
+          if(n>1){ td.classList.add('mc-full'); baslikVerildi = true; return; }
+          if(!et){ td.classList.add(td.querySelector('button') ? 'mc-act' : 'mc-full'); return; }
+          td.dataset.label = et;
+          if(!baslikVerildi){ td.classList.add('mc-baslik'); baslikVerildi = true; }
+          else if(td.textContent.trim().length > 22) td.classList.add('mc-uzun');
+        });
+        const gorunen = Array.from(tr.cells).filter(td=>!td.classList.contains('mc-bos'));
+        if(gorunen.length===1 && gorunen[0].classList.contains('mc-full')) tr.classList.add('mc-tek');
+      }));
+    });
+  }
+  // Çok sayıda çip varsa telefonda tek satırlık kaydırmalı şeride al (masaüstünde görünüm aynı kalır)
+  function cipleriSeritle(kok){
+    kok.querySelectorAll('.filters').forEach(f=>{
+      const cipler = Array.from(f.children).filter(c=>c.classList.contains('chip'));
+      if(cipler.length < 4 || f.querySelector('.chip-serit')) return;
+      const serit = document.createElement('div');
+      serit.className = 'chip-serit';
+      f.insertBefore(serit, cipler[0]);
+      cipler.forEach(c=>serit.appendChild(c));
+      const aktif = serit.querySelector('.chip.active');
+      if(aktif) requestAnimationFrame(()=>{ serit.scrollLeft = aktif.offsetLeft - (serit.clientWidth - aktif.offsetWidth)/2; });
+    });
+  }
+  function mobilDuzenle(){
+    tablolariKartlastir(app);
+    if(window.matchMedia('(max-width:680px)').matches) cipleriSeritle(app);
+    // Aktif sekmeyi yatay şeritte görünür tut
+    const serit = app.querySelector('.tabs'), aktif = serit && serit.querySelector('.tab.active');
+    if(serit && aktif && serit.scrollWidth > serit.clientWidth){
+      serit.scrollLeft = aktif.offsetLeft - (serit.clientWidth - aktif.offsetWidth)/2;
+    }
+  }
+  document.addEventListener('click', function(e){
+    document.querySelectorAll('details.hdr-mob[open], details.gorunum-sec[open]').forEach(d=>{ if(!d.contains(e.target)) d.removeAttribute('open'); });
+  });
 
   function renderActiveTab(rol, orders,bekleyen,uretilen,bekleyenM3,list){
     switch(state.activeTab){
@@ -4378,17 +4618,8 @@
     `;
   }
 
-  // ---------- Events ----------
-  app.addEventListener('click', function(e){
-    const t = e.target.closest('[data-action]');
-    if(!t){ if(e.target.classList.contains('overlay')){ state.modal=null; render(); } return; }
-    const action = t.dataset.action;
-    if(action==='logout'){ doLogout(); }
-    else if(action==='sifre-degistir'){ state.modal = { type:'sifre-degistir' }; render(); }
-    else if(action==='kullanicilar'){ loadTumKullanicilar().then(render); state.modal = { type:'kullanicilar' }; render(); }
-    else if(action==='sifre-ata-ac'){ state.modal = { type:'sifre-ata', hedefId: t.dataset.id, hedefAd: t.dataset.ad }; render(); }
-    else if(action==='modul'){
-      state.modul = t.dataset.modul; state.activeTab = defaultTab(state.modul); state.toast=null;
+  function modulSec(m){
+      state.modul = m; state.activeTab = defaultTab(state.modul); state.toast=null;
       if(state.activeTab==='uretim_takip' && !state.gunlukUretimLoaded){ loadGunlukUretim(); }
       if(state.activeTab==='uretim_takip'){
         if(!state.tutkalLoaded) loadTutkal(true);
@@ -4413,6 +4644,25 @@
         if(!state.cizimlerLoaded) loadCizimler(true);
       }
       render();
+  }
+
+  // ---------- Events ----------
+  app.addEventListener('click', function(e){
+    const t = e.target.closest('[data-action]');
+    if(!t){ if(e.target.classList.contains('overlay')){ state.modal=null; render(); } return; }
+    const action = t.dataset.action;
+    if(action==='logout'){ doLogout(); }
+    else if(action==='sifre-degistir'){ state.modal = { type:'sifre-degistir' }; render(); }
+    else if(action==='kullanicilar'){ loadTumKullanicilar().then(render); state.modal = { type:'kullanicilar' }; render(); }
+    else if(action==='sifre-ata-ac'){ state.modal = { type:'sifre-ata', hedefId: t.dataset.id, hedefAd: t.dataset.ad }; render(); }
+    else if(action==='modul'){ modulSec(t.dataset.modul); }
+    else if(action==='gorunum'){
+      state.gorunumRol = t.dataset.rol || null; state.modal = null; state.toast = null;
+      const r = state.gorunumRol || (state.profile ? state.profile.rol : null);
+      const mods = moduller(r);
+      const hedef = (mods.includes('uretim') && (r==='admin'||r==='patron'||r==='vardiya_amiri')) ? 'uretim' : mods[0];
+      if(hedef) modulSec(hedef); else render();
+      window.scrollTo(0,0);
     }
     else if(action==='refresh'){ loadOrders(); }
     else if(action==='tab'){
