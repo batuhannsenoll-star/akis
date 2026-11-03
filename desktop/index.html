@@ -29,6 +29,10 @@
     --wood-3:#D9B98A;
     --wood-4:#5B3A22;
     --wood-5:#E8D2A6;
+    --tutkal:#2E6A86;
+    --tutkal-dark:#225269;
+    --tutkal-bg:#E5EFF4;
+    --gunluk-bg:#F8EBD6;
     --radius:10px;
     --shadow:0 1px 2px rgba(20,20,20,.06), 0 4px 14px rgba(20,20,20,.05);
   }
@@ -139,6 +143,21 @@
   .meta-row:last-child{border-bottom:none;}
   .loading{padding:60px;text-align:center;color:var(--muted);}
   .asama-node:hover rect{opacity:.85;}
+
+  /* ================= ÜRETİM TAKİP: RENKLİ ÇİPLER ================= */
+  .chip.chip-gunluk{border-color:#E2BE86;color:var(--amber-dark);background:var(--gunluk-bg);font-weight:600;}
+  .chip.chip-gunluk.active{background:var(--amber);border-color:var(--amber-dark);color:#fff;}
+  .chip.chip-tutkal{border-color:#A9C7D6;color:var(--tutkal-dark);background:var(--tutkal-bg);font-weight:600;}
+  .chip.chip-tutkal.active{background:var(--tutkal);border-color:var(--tutkal-dark);color:#fff;}
+  .tk-filtre .chip.active{background:var(--tutkal);border-color:var(--tutkal-dark);color:#fff;}
+  .tk-filtre .row-btn.primary{background:var(--tutkal);border-color:var(--tutkal-dark);}
+  .tk-filtre .row-btn.primary:hover{background:var(--tutkal-dark);}
+
+  /* Masaüstünde tablolar kartın tamamını kaplasın (sağda boşluk kalmasın) */
+  @media (min-width:681px){
+    table{display:table;}
+    .card{overflow-x:auto;}
+  }
 
   /* ================= ADMIN GÖRÜNÜM PANELİ ================= */
   .gorunum-sec{position:relative;}
@@ -417,7 +436,7 @@
   function moduller(rol){
     let mods = [];
     if(rol==='satis') mods = ['satis'];
-    else if(rol==='vardiya_amiri') mods = ['uretim','tedarik'];
+    else if(rol==='vardiya_amiri') mods = ['uretim'];
     else if(rol==='satin_alma') mods = ['tedarik'];
     else if(rol==='mobilya_vardiya_amiri') mods = ['mobilya'];
     else if(rol==='admin' || rol==='patron') mods = ['satis','uretim','tedarik','mobilya'];
@@ -439,7 +458,7 @@
     if((rol==='admin'||rol==='patron'||rol==='vardiya_amiri') && mods.includes('uretim')){
       state.modul = 'uretim';
       state.activeTab = 'uretim_takip';
-      state.uretimTakipView = 'ozet';
+      state.uretimTakipView = rol==='vardiya_amiri' ? 'gunluk' : 'ozet';
     } else {
       state.modul = mods[0] || null;
       state.activeTab = defaultTab(state.modul);
@@ -976,14 +995,14 @@
     satis: [ {key:'giris', label:'Sipariş Giriş', roller:['satis','admin']}, {key:'takip', label:'Sipariş Takip', roller:['satis','admin','patron']} ],
     uretim: [
       {key:'uretim_takip', label:'Üretim Takip', roller:['vardiya_amiri','admin','patron']},
-      {key:'liste', label:'Mevcut Siparişler', roller:['vardiya_amiri','admin','patron']},
-      {key:'uretim_planlama', label:'Üretim Planlama', roller:['vardiya_amiri','admin','patron']}
+      {key:'liste', label:'Mevcut Siparişler', roller:['admin','patron']},
+      {key:'uretim_planlama', label:'Üretim Planlama', roller:['admin','patron']}
     ],
     tedarik: [
       {key:'kantar', label:'Kantar', roller:['satin_alma','admin','patron']},
       {key:'tomruk_sahasi', label:'Tomruk Sahası', roller:['satin_alma','admin','patron']},
       {key:'kalan_tutkal', label:'Kalan Tutkal', roller:['satin_alma','admin','patron']},
-      {key:'envanter', label:'Envanter', roller:['satin_alma','vardiya_amiri','admin','patron']}
+      {key:'envanter', label:'Envanter', roller:['satin_alma','admin','patron']}
     ],
     mobilya: [
       {key:'mob_giyotin', label:'Giyotin Kesim', roller:['mobilya_vardiya_amiri','admin','patron']},
@@ -1003,8 +1022,8 @@
     {key:'yillik', label:'Yıllık Özet'},
     {key:'grafik', label:'Yıllık Grafikler'},
     {key:'tutkal', label:'Tutkal Takip'},
-    {key:'kapasite', label:'Kapasite Raporu'},
-    {key:'torna', label:'Torna'},
+    {key:'kapasite', label:'Kapasite Raporu', vaGizli:true},
+    {key:'torna', label:'Torna', vaGizli:true},
     {key:'receteler', label:'Reçeteler', adminOnly:true}
   ];
   const ENVANTER_KATEGORILERI = {
@@ -1940,14 +1959,15 @@
 
   function renderUretimTakipTab(rol){
     const istenenView = state.uretimTakipView || 'gunluk';
-    const gorunumler = URETIM_TAKIP_ALT_GORUNUMLER.filter(v => !v.adminOnly || rol==='admin');
+    // Vardiya amiri: sadece günlük kayıtlar, tutkal ve üretim analizi (aylık/yıllık özet, grafikler)
+    const gorunumler = URETIM_TAKIP_ALT_GORUNUMLER.filter(v => (!v.adminOnly || rol==='admin') && !(v.vaGizli && rol==='vardiya_amiri'));
     const view = gorunumler.find(v=>v.key===istenenView) ? istenenView : 'gunluk';
     const kayitlar = gunlukUretimFiltreli();
     const ay = state.ozetAy;
     const ozet = hesaplaOzet(ay);
 
     const cipBar = `<div class="filters">
-        ${gorunumler.map(v=>`<div class="chip ${view===v.key?'active':''}" data-action="ut-view" data-view="${v.key}">${v.label}</div>`).join('')}
+        ${gorunumler.map(v=>`<div class="chip ${v.key==='gunluk'?'chip-gunluk':v.key==='tutkal'?'chip-tutkal':''} ${view===v.key?'active':''}" data-action="ut-view" data-view="${v.key}">${v.label}</div>`).join('')}
         ${view==='gunluk' ? `
           <input type="date" value="${state.gunlukBaslangic}" data-action="gunluk-tarih-baslangic" title="Başlangıç tarihi" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px;">
           <span class="hint">—</span>
@@ -2259,7 +2279,7 @@
     const view = state.tutkalView || 'kalan';
     const kayitlar = state.tutkal.slice().sort((a,b)=> (b.tarih+b.vardiya).localeCompare(a.tarih+a.vardiya));
     return `
-      <div class="filters">
+      <div class="filters tk-filtre">
         <div class="chip ${view==='kalan'?'active':''}" data-action="tk-view" data-view="kalan">Kalan Tutkal</div>
         <div class="chip ${view==='gunluk'?'active':''}" data-action="tk-view" data-view="gunluk">Günlük Kayıtlar</div>
         <div class="chip ${view==='ozet'?'active':''}" data-action="tk-view" data-view="ozet">Aylık Özet</div>
@@ -2316,7 +2336,7 @@
       <div class="card" style="margin-bottom:16px;overflow:hidden;">
         <table>
           <thead>
-            <tr><th colspan="12" style="font-weight:800;font-size:14px;background:var(--amber);color:#1c1f22;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</th></tr>
+            <tr><th colspan="12" style="font-weight:800;font-size:14px;background:var(--tutkal);color:#fff;padding:11px 14px;letter-spacing:.2px;">${fmtDate(tarih)}</th></tr>
             <tr><th>Vrd.</th><th>Alt</th><th>Üst</th><th>Soğ.</th><th>K.U.</th><th>K.K.</th><th>İ.B.</th><th>M.G.</th><th>Eklenen</th><th>Harcanan</th><th>Kalan</th><th></th></tr>
           </thead>
           <tbody>${gunler[tarih].map(r=>`<tr style="background:${vardiyaRenk(r.vardiya)};">
@@ -4661,6 +4681,7 @@
       const r = state.gorunumRol || (state.profile ? state.profile.rol : null);
       const mods = moduller(r);
       const hedef = (mods.includes('uretim') && (r==='admin'||r==='patron'||r==='vardiya_amiri')) ? 'uretim' : mods[0];
+      if(r==='vardiya_amiri') state.uretimTakipView = 'gunluk';
       if(hedef) modulSec(hedef); else render();
       window.scrollTo(0,0);
     }
