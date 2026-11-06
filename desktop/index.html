@@ -5153,8 +5153,22 @@
     }
   });
 
+  // Çift kaydı önlemek için: bir form gönderilirken ikinci gönderim yok sayılır, butonlar kilitlenir
+  let gonderimSuruyor = false;
   app.addEventListener('submit', async function(e){
     e.preventDefault();
+    if(gonderimSuruyor) return;
+    gonderimSuruyor = true;
+    const kilitliButonlar = Array.from(e.target.querySelectorAll('button[type="submit"], button:not([type])'));
+    kilitliButonlar.forEach(b=>{ b.disabled = true; b.dataset.eskiYazi = b.textContent; if(b===e.submitter || kilitliButonlar.length===1) b.textContent = (e.target.id==='auth-form' ? 'Giriş yapılıyor…' : 'Kaydediliyor…'); });
+    try{
+      await formGonderiminiIsle(e);
+    } finally {
+      gonderimSuruyor = false;
+      kilitliButonlar.forEach(b=>{ if(b.isConnected){ b.disabled = false; if(b.dataset.eskiYazi) b.textContent = b.dataset.eskiYazi; } });
+    }
+  });
+  async function formGonderiminiIsle(e){
 
     if(e.target.id==='auth-form'){
       const f = e.target;
@@ -5615,7 +5629,7 @@
       await loadAyarlar(true);
       render();
     }
-  });
+  }
 
   state.uretimKritik = uretimPlaniVarsayilanKritik();
   uretimPlaniYukle();
